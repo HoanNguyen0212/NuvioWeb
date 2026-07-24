@@ -1,0 +1,421 @@
+/* Performance profile for LG webOS 4.x / Chromium 53 */
+html.nuvio-legacy-low-power *,
+html.nuvio-legacy-low-power *::before,
+html.nuvio-legacy-low-power *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.06s !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+/* The broad rule above gives every element a 60ms transition because the
+   default transition-property is `all`. On Home that delays every focus move
+   and repaints many descendants. Make Home navigation fully immediate. */
+html.nuvio-legacy-low-power .home-screen-shell,
+html.nuvio-legacy-low-power .home-screen-shell *,
+html.nuvio-legacy-low-power .home-screen-shell *::before,
+html.nuvio-legacy-low-power .home-screen-shell *::after {
+  animation: none !important;
+  transition: none !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+html.nuvio-legacy-low-power [style*="backdrop-filter"],
+html.nuvio-legacy-low-power .backdrop-blur,
+html.nuvio-legacy-low-power .blur,
+html.nuvio-legacy-low-power .glass {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+/* Keep focus feedback but avoid costly large glow repaints. */
+html.nuvio-legacy-low-power .focused,
+html.nuvio-legacy-low-power :focus {
+  filter: none !important;
+}
+
+/* One-focus-target catalog manager for the LG remote. */
+html.nuvio-legacy-low-power .catalog-order-card {
+  min-height: 74px !important;
+  cursor: pointer;
+}
+html.nuvio-legacy-low-power .catalog-order-action:not(.catalog-order-toggle) {
+  display: none !important;
+}
+html.nuvio-legacy-low-power .catalog-order-card-actions {
+  min-width: 180px !important;
+}
+html.nuvio-legacy-low-power .catalog-order-toggle {
+  display: block !important;
+  width: 180px !important;
+  min-height: 58px !important;
+  padding: 10px 18px !important;
+  font-family: Arial, sans-serif !important;
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  border: 3px solid rgba(255,255,255,.45) !important;
+}
+html.nuvio-legacy-low-power .catalog-order-toggle.focused,
+html.nuvio-legacy-low-power .catalog-order-toggle:focus {
+  border-color: #fff !important;
+  background: #fff !important;
+  color: #111 !important;
+  transform: none !important;
+}
+
+/* Chromium 53 has no unprefixed CSS Grid. Give the stream picker two fixed
+   columns and a real-height list so focus navigation can scroll it. */
+html.nuvio-legacy-low-power .stream-route-content {
+  display: block !important;
+}
+html.nuvio-legacy-low-power .stream-route-left {
+  position: absolute !important;
+  left: 48px !important;
+  top: 48px !important;
+  width: 700px !important;
+  height: 984px !important;
+  padding-right: 24px !important;
+  box-sizing: border-box !important;
+}
+html.nuvio-legacy-low-power .stream-route-right {
+  position: absolute !important;
+  right: 48px !important;
+  top: 48px !important;
+  width: 1060px !important;
+  height: 984px !important;
+  max-height: 984px !important;
+  overflow: hidden !important;
+}
+html.nuvio-legacy-low-power .stream-route-panel-shell {
+  min-height: 0 !important;
+}
+
+/* Sports Streams supplies 1280x720 artwork. Keep it landscape instead of
+   cropping it into the Classic layout's portrait 2:3 movie poster. */
+html.nuvio-legacy-low-power .home-screen-shell
+  .home-poster-card[data-addon-id="community.sports.fly"] {
+  flex-basis: 300px !important;
+  min-width: 300px !important;
+  max-width: 300px !important;
+}
+html.nuvio-legacy-low-power .home-screen-shell
+  .home-poster-card[data-addon-id="community.sports.fly"] .home-poster-frame {
+  height: 169px !important;
+  aspect-ratio: auto !important;
+  background: #080808 !important;
+}
+html.nuvio-legacy-low-power .home-screen-shell
+  .home-poster-card[data-addon-id="community.sports.fly"] .content-poster {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  object-position: center center !important;
+}
+
+/* Chromium 53 ignores CSS Grid, which otherwise leaves See All as one long
+   vertical column. Six fixed-width flex columns match the intended TV grid. */
+html.nuvio-legacy-low-power .seeall-grid {
+  display: flex !important;
+  flex-flow: row wrap !important;
+  align-items: flex-start !important;
+}
+html.nuvio-legacy-low-power .seeall-grid > .seeall-card {
+  flex: 0 0 248px !important;
+  width: 248px !important;
+  margin: 0 52px 20px 0 !important;
+}
+html.nuvio-legacy-low-power .seeall-grid > .seeall-card:nth-child(6n) {
+  margin-right: 0 !important;
+}
+
+/* The subtitle chooser is a three-column CSS Grid upstream. Chromium 53
+   stacks those rails vertically, hiding the concrete tracks and style/size
+   controls below the modal. Pin all three rails side by side instead. */
+html.nuvio-legacy-low-power .player-subtitle-modal .player-dialog-title {
+  height: 38px !important;
+  margin-bottom: 14px !important;
+  font-size: 32px !important;
+  line-height: 38px !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-overlay-grid {
+  display: block !important;
+  position: relative !important;
+  height: 742px !important;
+  min-height: 742px !important;
+  max-height: 742px !important;
+  overflow: hidden !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-rail {
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  height: 742px !important;
+  max-height: 742px !important;
+  box-sizing: border-box !important;
+  padding: 8px 6px 8px 0 !important;
+  overflow-y: auto !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-language-rail {
+  left: 0 !important;
+  width: 360px !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-options-rail {
+  left: 388px !important;
+  width: 560px !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-style-rail {
+  left: 976px !important;
+  width: 472px !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-dialog-item {
+  display: block !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  min-height: 64px !important;
+  margin-bottom: 8px !important;
+  padding: 12px 16px !important;
+  border-width: 2px !important;
+  border-style: solid !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-dialog-item-main {
+  display: block !important;
+  padding-right: 42px !important;
+  font-size: 22px !important;
+  line-height: 26px !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-dialog-item-sub {
+  display: block !important;
+  padding-right: 42px !important;
+  font-size: 16px !important;
+  line-height: 20px !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-language-count {
+  display: inline-block !important;
+  margin-left: 10px !important;
+  vertical-align: middle !important;
+  text-align: center !important;
+  line-height: 32px !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-dialog-item-check {
+  position: absolute !important;
+  right: 16px !important;
+  top: 50% !important;
+  width: 32px !important;
+  height: 32px !important;
+  margin-top: -16px !important;
+  font-size: 28px !important;
+  line-height: 32px !important;
+  text-align: center !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-option-copy {
+  display: block !important;
+  position: static !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-source-chip {
+  display: inline-block !important;
+  margin-bottom: 5px !important;
+  padding: 2px 8px !important;
+  line-height: 24px !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal .player-dialog-style-item {
+  display: flex !important;
+  position: relative !important;
+  align-items: center !important;
+  min-height: 96px !important;
+  padding: 8px !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal
+  .player-dialog-style-item .player-dialog-step {
+  display: flex !important;
+  position: static !important;
+  flex: 0 0 72px !important;
+  width: 72px !important;
+  min-width: 72px !important;
+  height: 72px !important;
+  padding: 0 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 36px !important;
+  line-height: 72px !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal
+  .player-dialog-style-item .player-dialog-item-center {
+  display: block !important;
+  position: static !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  padding: 0 8px !important;
+  text-align: center !important;
+}
+html.nuvio-legacy-low-power .player-subtitle-modal
+  .player-dialog-style-item .player-dialog-item-center .player-dialog-item-main,
+html.nuvio-legacy-low-power .player-subtitle-modal
+  .player-dialog-style-item .player-dialog-item-center .player-dialog-item-sub {
+  padding-right: 0 !important;
+  text-align: center !important;
+}
+
+/* High-contrast source picker for a dim living-room TV. Upstream tertiary
+   colors are too close to the dark card/background on this panel. */
+html.nuvio-legacy-low-power .stream-route-card {
+  border: 2px solid #526170 !important;
+  background: #111820 !important;
+  color: #ffffff !important;
+}
+html.nuvio-legacy-low-power .stream-route-card.focused {
+  border: 3px solid #ffffff !important;
+  background: #26384a !important;
+  box-shadow: 0 0 0 3px #66c7ff !important;
+  color: #ffffff !important;
+}
+html.nuvio-legacy-low-power .stream-route-card-heading {
+  color: #ffffff !important;
+  font-family: Arial, sans-serif !important;
+  font-size: 24px !important;
+  line-height: 30px !important;
+  font-weight: 700 !important;
+}
+html.nuvio-legacy-low-power .stream-route-card-quality {
+  color: #7ddcff !important;
+  font-family: Arial, sans-serif !important;
+  font-size: 21px !important;
+  line-height: 27px !important;
+  font-weight: 700 !important;
+}
+html.nuvio-legacy-low-power .stream-route-card-line {
+  color: #edf4fb !important;
+  font-family: Arial, sans-serif !important;
+  font-size: 18px !important;
+  line-height: 23px !important;
+  font-weight: 600 !important;
+}
+html.nuvio-legacy-low-power .stream-route-card-line.secondary {
+  color: #cbd8e6 !important;
+  font-weight: 500 !important;
+}
+html.nuvio-legacy-low-power .stream-route-addon-name {
+  color: #ffffff !important;
+  font-family: Arial, sans-serif !important;
+  font-size: 16px !important;
+  line-height: 21px !important;
+  font-weight: 700 !important;
+}
+html.nuvio-legacy-low-power .stream-route-stream-badge {
+  border-color: #607284 !important;
+  background: #202b36 !important;
+  color: #f8fbff !important;
+  font-family: Arial, sans-serif !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+html.nuvio-legacy-low-power .stream-route-stream-badge.quality {
+  color: #86efac !important;
+}
+html.nuvio-legacy-low-power .stream-route-stream-badge.visual {
+  color: #fde047 !important;
+}
+html.nuvio-legacy-low-power .stream-route-stream-badge.codec {
+  color: #93c5fd !important;
+}
+html.nuvio-legacy-low-power .stream-route-stream-badge.audio {
+  color: #f9a8d4 !important;
+}
+html.nuvio-legacy-low-power .stream-route-stream-badge.language {
+  color: #99f6e4 !important;
+}
+html.nuvio-legacy-low-power .stream-route-chip {
+  border: 2px solid #718096 !important;
+  background: #18212b !important;
+  color: #f8fbff !important;
+  font-family: Arial, sans-serif !important;
+  font-size: 20px !important;
+  font-weight: 700 !important;
+}
+html.nuvio-legacy-low-power .stream-route-chip.selected {
+  border-color: #9edcff !important;
+  background: #245173 !important;
+  color: #ffffff !important;
+}
+html.nuvio-legacy-low-power .stream-route-chip.focused {
+  border-color: #ffffff !important;
+  box-shadow: 0 0 0 3px #66c7ff !important;
+}
+html.nuvio-legacy-low-power .stream-route-subtitle,
+html.nuvio-legacy-low-power .stream-route-title {
+  color: #ffffff !important;
+  font-family: Arial, sans-serif !important;
+  font-weight: 700 !important;
+}
+html.nuvio-legacy-low-power .stream-route-episode-code,
+html.nuvio-legacy-low-power .stream-route-detail-line {
+  color: #dce8f4 !important;
+  font-family: Arial, sans-serif !important;
+  font-weight: 600 !important;
+}
+
+/* Chromium 53 ignores the Settings CSS Grid, stacking the navigation rail and
+   content panel so controls are off-screen. Keep both panels in one viewport. */
+html.nuvio-legacy-low-power .settings-workspace {
+  display: block !important;
+  position: relative !important;
+}
+html.nuvio-legacy-low-power .settings-sidebar-frame {
+  position: absolute !important;
+  top: 40px !important;
+  bottom: 40px !important;
+  left: 40px !important;
+  width: 440px !important;
+  height: auto !important;
+}
+html.nuvio-legacy-low-power .settings-content-frame {
+  position: absolute !important;
+  top: 40px !important;
+  right: 40px !important;
+  bottom: 40px !important;
+  left: 512px !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+/* Grid fallbacks used by editable layout cards and text-dialog actions. */
+html.nuvio-legacy-low-power .settings-layout-grid,
+html.nuvio-legacy-low-power .settings-text-dialog-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+}
+html.nuvio-legacy-low-power .settings-layout-grid > .settings-layout-card {
+  flex: 1 1 0 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+}
+html.nuvio-legacy-low-power .settings-layout-grid > .settings-layout-card + .settings-layout-card {
+  margin-left: 24px !important;
+}
+html.nuvio-legacy-low-power .settings-text-dialog-actions > .settings-text-dialog-button {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+}
+html.nuvio-legacy-low-power .settings-text-dialog-actions > .settings-text-dialog-button + .settings-text-dialog-button {
+  margin-left: 12px !important;
+}
+
+/* Chrome 53 has no Flex gap; preserve separation between focus targets. */
+html.no-flex-gap.nuvio-legacy-low-power .settings-sidebar > * + * {
+  margin-top: 28px !important;
+}
+html.no-flex-gap.nuvio-legacy-low-power .settings-content > * + * {
+  margin-top: 24px !important;
+}
+html.no-flex-gap.nuvio-legacy-low-power .settings-theme-row > * + * {
+  margin-left: 20px !important;
+}
+
+/* Settings should react immediately to the remote on the low-power TV. */
+html.nuvio-legacy-low-power .settings-shell,
+html.nuvio-legacy-low-power .settings-shell * {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}

@@ -58,17 +58,20 @@ function buildWebOsIndexHtml({ webOsScriptPath = "" } = {}) {
   });
 
   return `<!DOCTYPE html>
-<html lang="en" class="no-flex-gap no-css-math no-backdrop-filter no-aspect-ratio">
+<html lang="en" class="nuvio-legacy-low-power no-flex-gap no-css-math no-backdrop-filter no-aspect-ratio">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <title>${appName}</title>
   <script src="assets/runtime/legacy-features.js"></script>
+  <script src="nuvio-legacy-polyfills.js"></script>
+  <script src="nuvio-legacy-fast-home.js"></script>
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/layout.css" />
   <link rel="stylesheet" href="css/components.css" />
   <link rel="stylesheet" href="css/themes.css" />
+  <link rel="stylesheet" href="css/nuvio-legacy-performance.css" />
 </head>
 <body>
   <script src="boot-guard.js"></script>

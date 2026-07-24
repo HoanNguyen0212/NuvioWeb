@@ -382,6 +382,12 @@ async function buildCSS() {
     const cssPath = path.join(cssDir, file);
     const outPath = path.join(distDir, "css", file);
 
+    if (file === "nuvio-legacy-performance.css") {
+      await mkdir(path.dirname(outPath), { recursive: true });
+      await cp(cssPath, outPath);
+      continue;
+    }
+
     const css = await readFile(cssPath, "utf8");
     const result = await postcss([
       postcssGlobalData({ files: [path.join(cssDir, "base.css")] }),
@@ -541,6 +547,14 @@ async function runBuild() {
       cp(path.join(rootDir, "assets"), path.join(distDir, "assets"), { recursive: true }),
       cp(path.join(rootDir, "res"), path.join(distDir, "res"), { recursive: true }),
       cp(path.join(rootDir, "boot-guard.js"), path.join(distDir, "boot-guard.js")),
+      cp(
+        path.join(rootDir, "nuvio-legacy-polyfills.js"),
+        path.join(distDir, "nuvio-legacy-polyfills.js")
+      ),
+      cp(
+        path.join(rootDir, "nuvio-legacy-fast-home.js"),
+        path.join(distDir, "nuvio-legacy-fast-home.js")
+      ),
       cp(path.join(rootDir, "docs", "youtube-proxy.html"), path.join(distDir, "youtube-proxy.html"))
     ]);
     await Promise.all([

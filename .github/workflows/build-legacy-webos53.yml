@@ -1,0 +1,74 @@
+name: Build legacy webOS 53 candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-legacy-webos53-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Run tests when present
+        run: |
+          if compgen -G 'tests/*.test.mjs' > /dev/null; then
+            npm test
+          else
+            echo 'No tests/*.test.mjs files are present in this upstream revision; skipping.'
+          fi
+
+      - name: Create non-secret runtime placeholders
+        run: node scripts/create-placeholder-properties.mjs
+
+      - name: Build and package webOS candidate
+        env:
+          NUVIO_REQUIRE_LOCAL_PROPERTIES: "1"
+          NUVIO_BUILD_METAFILE: "1"
+        run: npm run package:webos
+
+      - name: Generate bundle report
+        run: node scripts/analyze-legacy-bundle.mjs
+
+      - name: Verify unpacked package
+        run: node scripts/verify-legacy-webos-package.mjs
+
+      - name: Create private-deployment manifests
+        run: |
+          mkdir -p .cache/legacy-candidate
+          find .cache/webos-package -type f -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > .cache/legacy-candidate/UNPACKED-SHA256SUMS.txt
+          sha256sum space.nuvio.webos_*_all.ipk > .cache/legacy-candidate/IPK-SHA256SUMS.txt
+          cp space.nuvio.webos_*_all.ipk .cache/legacy-candidate/
+          cp .cache/legacy-package-verification/* .cache/legacy-candidate/
+          cp .cache/legacy-analysis/bundle-analysis.json .cache/legacy-candidate/
+          cp .cache/legacy-analysis/bundle-analysis.md .cache/legacy-candidate/
+          cp .cache/legacy-analysis/webpack-stats.json .cache/legacy-candidate/
+          printf '%s\n' "commit=${GITHUB_SHA}" "branch=${GITHUB_REF_NAME}" \
+            "runtime_environment=placeholder-only" > .cache/legacy-candidate/BUILD-INFO.txt
+
+      - name: Upload untested placeholder candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: UNTESTED-legacy-webos53-${{ github.sha }}
+          path: .cache/legacy-candidate/
+          if-no-files-found: error
+          retention-days: 7

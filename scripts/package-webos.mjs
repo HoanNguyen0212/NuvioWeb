@@ -96,6 +96,7 @@ async function stageApp() {
   const appInfo = JSON.parse(await readFile(appInfoPath, "utf8"));
   appInfo.title = appName;
   appInfo.version = version;
+  appInfo.requiredVersion = compatibilityPolicy.webOsRequiredVersion;
   appInfo.icon = "icon.png";
   appInfo.largeIcon = "largeIcon.png";
   appInfo.services = [webOsServiceId];

@@ -2,6 +2,9 @@ name: Build legacy webOS 53 candidate
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - legacy-webos53-lite
 
 permissions:
   contents: read

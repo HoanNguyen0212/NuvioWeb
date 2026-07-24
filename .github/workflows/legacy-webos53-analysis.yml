@@ -37,8 +37,13 @@ jobs:
       - name: Install exact dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests when the upstream checkout contains tests
+        run: |
+          if compgen -G 'tests/*.test.mjs' > /dev/null; then
+            npm test
+          else
+            echo 'No tests/*.test.mjs files are present in this upstream revision; skipping.'
+          fi
 
       - name: Build Chrome 53 analysis bundle
         env:

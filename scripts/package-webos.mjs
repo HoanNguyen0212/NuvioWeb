@@ -165,6 +165,7 @@ async function packageWebOs() {
   console.log("creating webOS IPK...");
   try {
     await runWebOsToolsBinary("ares-package", [
+      "--no-minify",
       appStageDir,
       serviceStageDir,
       "--outdir",

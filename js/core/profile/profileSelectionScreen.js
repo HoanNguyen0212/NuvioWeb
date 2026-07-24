@@ -2097,7 +2097,7 @@ export const ProfileSelectionScreen = {
     profileCard?.classList?.add("is-activating");
     try {
       await ProfileManager.setActiveProfile(profileId);
-      StartupSyncService.enableProfileScopedSync();
+      await StartupSyncService.start({ profileScopedSyncEnabled: true, runInitialPull: false });
       detailWatchedEnrichmentService.invalidateAllCache();
       await I18n.init();
       ThemeManager.apply();

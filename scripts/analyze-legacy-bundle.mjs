@@ -17,9 +17,11 @@ async function exists(filePath) {
 }
 
 function normalizeName(name) {
-  return String(name || "")
-    .replace(/^\.\//, "")
-    .replaceAll("\\", "/");
+  const value = String(name || "").replaceAll("\\", "/");
+  if (path.isAbsolute(value)) {
+    return path.relative(rootDir, value).replaceAll("\\", "/");
+  }
+  return value.replace(/^\.\//, "");
 }
 
 function flattenModules(modules = [], output = []) {
@@ -43,7 +45,8 @@ if (await exists(webpackStatsPath)) {
     .filter((asset) => String(asset.name || "").endsWith(".js"))
     .map((asset) => ({ name: asset.name, bytes: Number(asset.size || 0) }))
     .sort((left, right) => right.bytes - left.bytes);
-  const chunks = (stats.chunks || []).map((chunk) => ({
+  const rawChunks = stats.chunks || [];
+  const chunks = rawChunks.map((chunk) => ({
     id: chunk.id,
     names: chunk.names || [],
     initial: Boolean(chunk.initial),
@@ -53,20 +56,39 @@ if (await exists(webpackStatsPath)) {
       0
     )
   }));
+  const mapModule = (module) => ({
+    name: normalizeName(module.nameForCondition || module.name || module.identifier),
+    sourceBytes: Number(module.size || 0),
+    chunks: module.chunks || []
+  });
   const allModules = flattenModules(stats.modules || [])
-    .map((module) => ({
-      name: normalizeName(module.nameForCondition || module.name),
-      sourceBytes: Number(module.size || 0),
-      chunks: module.chunks || []
-    }))
+    .map(mapModule)
     .filter((module) => module.name && !module.name.startsWith("webpack/runtime/"))
     .sort((left, right) => right.sourceBytes - left.sourceBytes);
   const initialChunkIds = new Set(
-    chunks.filter((chunk) => chunk.initial).map((chunk) => String(chunk.id))
+    rawChunks.filter((chunk) => chunk.initial).map((chunk) => String(chunk.id))
   );
-  const startupModules = allModules
-    .filter((module) => module.chunks.some((chunkId) => initialChunkIds.has(String(chunkId))))
-    .sort((left, right) => right.sourceBytes - left.sourceBytes);
+  const startupModuleMap = new Map();
+  const startupCandidates = [
+    ...allModules.filter((module) =>
+      module.chunks.some((chunkId) => initialChunkIds.has(String(chunkId)))
+    ),
+    ...rawChunks
+      .filter((chunk) => chunk.initial)
+      .flatMap((chunk) => flattenModules(chunk.modules || []))
+      .map(mapModule)
+  ];
+  startupCandidates
+    .filter((module) => module.name && !module.name.startsWith("webpack/runtime/"))
+    .forEach((module) => {
+      const existing = startupModuleMap.get(module.name);
+      if (!existing || module.sourceBytes > existing.sourceBytes) {
+        startupModuleMap.set(module.name, module);
+      }
+    });
+  const startupModules = Array.from(startupModuleMap.values()).sort(
+    (left, right) => right.sourceBytes - left.sourceBytes
+  );
 
   summary = {
     generatedAt: new Date().toISOString(),

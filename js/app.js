@@ -1,16 +1,13 @@
 import "./runtime/polyfills.js";
 import "./core/diagnostics/consoleDebugBuffer.js";
-import { detailWatchedEnrichmentService } from "./data/repository/detailWatchedEnrichmentService.js";
 import { Router } from "./ui/navigation/router.js";
 import { FocusEngine } from "./ui/navigation/focusEngine.js";
 import { AuthManager } from "./core/auth/authManager.js";
 import { AuthState } from "./core/auth/authState.js";
 import { ProfileManager } from "./core/profile/profileManager.js";
 import { ProfileSyncService } from "./core/profile/profileSyncService.js";
-import { StartupSyncService } from "./core/profile/startupSyncService.js";
 import { ThemeManager } from "./ui/theme/themeManager.js";
 import { renderAppShell } from "./bootstrap/renderAppShell.js";
-import { renderAddonRemotePage } from "./bootstrap/renderAddonRemotePage.js";
 import { Platform } from "./platform/index.js";
 import { LocalStore } from "./core/storage/localStore.js";
 import { I18n } from "./i18n/index.js";
@@ -31,6 +28,23 @@ const GUEST_QR_BYPASS_KEY = "skipAuthQrGate";
 const SIGNED_OUT_ALLOWED_ROUTES = new Set(["trakt"]);
 let hasSelectedProfileThisSession = false;
 let appShellRendered = false;
+let startupSyncServicePromise = null;
+
+function getStartupSyncService() {
+  if (!startupSyncServicePromise) {
+    startupSyncServicePromise = import(
+      /* webpackChunkName: "background-profile-sync" */ "./core/profile/startupSyncService.js"
+    ).then((module) => module.StartupSyncService);
+  }
+  return startupSyncServicePromise;
+}
+
+function stopStartupSyncIfLoaded() {
+  if (!startupSyncServicePromise) {
+    return;
+  }
+  void startupSyncServicePromise.then((service) => service.stop()).catch(() => {});
+}
 
 function markBootStage(stage) {
   const guard = globalThis.NuvioBootGuard;
@@ -171,8 +185,6 @@ async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
     null;
   if (activeProfile) {
     await ProfileManager.setActiveProfile(activeProfile.id);
-    StartupSyncService.enableProfileScopedSync();
-    detailWatchedEnrichmentService.invalidateAllCache();
     await I18n.init();
     ThemeManager.apply();
     I18n.apply();
@@ -188,9 +200,20 @@ async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
   } else {
     await Router.navigate("home");
   }
-  void StartupSyncService.requestSyncNow().catch((error) => {
-    console.warn("Profile background sync failed", error);
-  });
+  void Promise.all([
+    getStartupSyncService(),
+    import(
+      /* webpackChunkName: "background-profile-sync" */ "./data/repository/detailWatchedEnrichmentService.js"
+    )
+  ])
+    .then(async ([service, enrichmentModule]) => {
+      enrichmentModule.detailWatchedEnrichmentService.invalidateAllCache();
+      await service.start({ profileScopedSyncEnabled: true, runInitialPull: false });
+      return service.requestSyncNow();
+    })
+    .catch((error) => {
+      console.warn("Profile background sync failed", error);
+    });
 }
 
 async function routeAfterAuthentication() {
@@ -358,12 +381,12 @@ async function bootstrapApp() {
   markBootStage("Restoring session");
   AuthManager.subscribe((state) => {
     if (state === AuthState.LOADING) {
-      StartupSyncService.stop();
+      stopStartupSyncIfLoaded();
       return;
     }
 
     if (state === AuthState.SIGNED_OUT) {
-      StartupSyncService.stop();
+      stopStartupSyncIfLoaded();
       hasSelectedProfileThisSession = false;
       const shouldBypassQr = Boolean(LocalStore.get(GUEST_QR_BYPASS_KEY, false));
       if (isSignedOutRouteAllowed()) {
@@ -407,7 +430,6 @@ async function bootstrapApp() {
     if (state === AuthState.AUTHENTICATED) {
       markBootStage("Loading profiles");
       LocalStore.remove(GUEST_QR_BYPASS_KEY);
-      StartupSyncService.start({ runInitialPull: false });
       routeAfterAuthentication().catch((error) => {
         console.warn("Failed to resolve authenticated route", error);
         Router.navigate("profileSelection");
@@ -420,6 +442,9 @@ async function bootstrapApp() {
 }
 
 async function bootstrapAddonRemoteMode() {
+  const { renderAddonRemotePage } = await import(
+    /* webpackChunkName: "addon-remote" */ "./bootstrap/renderAddonRemotePage.js"
+  );
   await renderAddonRemotePage();
   appShellRendered = true;
 }

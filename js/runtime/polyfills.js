@@ -1,10 +1,2 @@
-import "core-js/stable/global-this.js";
-import "core-js/stable/object/from-entries.js";
-import "core-js/stable/array/flat.js";
-import "core-js/stable/array/flat-map.js";
-import "core-js/stable/promise/all-settled.js";
-import "core-js/stable/string/replace-all.js";
-import "core-js/stable/string/trim-start.js";
-import "core-js/stable/string/trim-end.js";
-import "core-js/stable/url/index.js";
-import "core-js/stable/url-search-params/index.js";
+// The legacy webOS package loads nuvio-legacy-polyfills.js before app.bundle.js.
+// Keep this module as the stable startup import without bundling core-js into Home.

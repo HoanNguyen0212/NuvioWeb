@@ -30,7 +30,7 @@ const sensitiveRuntimeKeys = [
 ];
 const overlayHashes = {
   "nuvio-legacy-fast-home.js": "cb3d37785b2c11bf57d1fe13cb0a03214f1f549890606e83ac84225c8ae6d83c",
-  "nuvio-legacy-polyfills.js": "ef0953adc1ca4d52f1d7bac17ba89866d5aa52d07027573b637ffc00601ae6b3",
+  "nuvio-legacy-polyfills.js": "e04badf84cf5b286d318cb0219da0eb17c5aa1932856ed002db575fd3d1505c2",
   "css/nuvio-legacy-performance.css": "a18a63853c43e8f2df047cb077facd6eeac60f91126bbe0ebedd3ab147226848"
 };
 
@@ -135,8 +135,8 @@ for (const filePath of applicationJavaScript) {
   parse(source, { ecmaVersion: 2016, sourceType: "script", allowHashBang: true });
 }
 const startupBytes = (await stat(path.join(appDir, "app.bundle.js"))).size;
-assert(startupBytes <= 750_000, `Startup bundle regression: ${startupBytes} bytes`);
-assert(totalApplicationBytes <= 2_300_000, `Total JavaScript regression: ${totalApplicationBytes} bytes`);
+assert(startupBytes <= 550_000, `Startup bundle regression: ${startupBytes} bytes`);
+assert(totalApplicationBytes <= 2_250_000, `Total JavaScript regression: ${totalApplicationBytes} bytes`);
 
 const report = {
   verifiedAt: new Date().toISOString(),

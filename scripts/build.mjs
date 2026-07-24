@@ -517,9 +517,13 @@ async function buildBundle() {
       all: false,
       assets: true,
       chunks: true,
+      ids: true,
       modules: true,
+      modulesSpace: Number.POSITIVE_INFINITY,
       nestedModules: true,
+      nestedModulesSpace: Number.POSITIVE_INFINITY,
       chunkModules: true,
+      chunkModulesSpace: Number.POSITIVE_INFINITY,
       reasons: false
     });
     await writeFile(

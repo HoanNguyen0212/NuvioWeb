@@ -2,6 +2,14 @@
 (function () {
   'use strict';
 
+  if (typeof window.globalThis === 'undefined') {
+    try {
+      Object.defineProperty(window, 'globalThis', { configurable: true, value: window });
+    } catch (e) {
+      window.globalThis = window;
+    }
+  }
+
   if (window.Promise && !Promise.prototype.finally) {
     Promise.prototype.finally = function (onFinally) {
       var P = this.constructor || Promise;
@@ -39,13 +47,95 @@
   }
   if (!Object.values) Object.values = function (obj) { return Object.keys(obj).map(function (k) { return obj[k]; }); };
   if (!Object.entries) Object.entries = function (obj) { return Object.keys(obj).map(function (k) { return [k, obj[k]]; }); };
-  if (!Object.fromEntries) Object.fromEntries = function (items) { var out = {}; [].forEach.call(items, function (x) { out[x[0]] = x[1]; }); return out; };
+  if (!Object.fromEntries) Object.fromEntries = function (items) {
+    var out = {}, iterator, step, i, entry;
+    if (items != null && window.Symbol && Symbol.iterator && typeof items[Symbol.iterator] === 'function') {
+      iterator = items[Symbol.iterator]();
+      while (!(step = iterator.next()).done) {
+        entry = step.value;
+        out[entry[0]] = entry[1];
+      }
+      return out;
+    }
+    for (i = 0; items && i < items.length; i += 1) {
+      entry = items[i];
+      out[entry[0]] = entry[1];
+    }
+    return out;
+  };
   if (!Array.prototype.includes) Array.prototype.includes = function (x, start) { return this.indexOf(x, start || 0) !== -1; };
+  if (!Array.prototype.flat) Array.prototype.flat = function (depth) {
+    var out = [], maxDepth = depth === undefined ? 1 : Math.max(0, Number(depth) || 0);
+    function append(input, remaining) {
+      for (var i = 0; i < input.length; i += 1) {
+        if (!(i in input)) continue;
+        var value = input[i];
+        if (remaining > 0 && Array.isArray(value)) append(value, remaining - 1);
+        else out.push(value);
+      }
+    }
+    append(this, maxDepth);
+    return out;
+  };
+  if (!Array.prototype.flatMap) Array.prototype.flatMap = function (callback, thisArg) {
+    if (typeof callback !== 'function') throw new TypeError('flatMap callback must be a function');
+    var mapped = [];
+    for (var i = 0; i < this.length; i += 1) {
+      if (i in this) mapped.push(callback.call(thisArg, this[i], i, this));
+    }
+    return mapped.flat(1);
+  };
   if (!String.prototype.includes) String.prototype.includes = function (x, start) { return this.indexOf(x, start || 0) !== -1; };
   if (!String.prototype.startsWith) String.prototype.startsWith = function (x, start) { return this.substr(start || 0, x.length) === x; };
   if (!String.prototype.endsWith) String.prototype.endsWith = function (x, len) { len = len == null ? this.length : len; return this.substring(len - x.length, len) === x; };
   if (!String.prototype.padStart) String.prototype.padStart = function (n, fill) { fill = fill == null ? ' ' : String(fill); var s = String(this); while (s.length < n) s = fill + s; return s.slice(-n); };
   if (!String.prototype.padEnd) String.prototype.padEnd = function (n, fill) { fill = fill == null ? ' ' : String(fill); var s = String(this); while (s.length < n) s += fill; return s.slice(0, n); };
+  if (!String.prototype.replaceAll) String.prototype.replaceAll = function (searchValue, replaceValue) {
+    var source = String(this), search = String(searchValue), cursor = 0, index, out = '';
+    if (searchValue instanceof RegExp) {
+      if (!searchValue.global) throw new TypeError('replaceAll RegExp must be global');
+      return source.replace(searchValue, replaceValue);
+    }
+    if (search === '') {
+      for (var j = 0; j <= source.length; j += 1) {
+        out += typeof replaceValue === 'function' ? String(replaceValue('', j, source)) : String(replaceValue);
+        if (j < source.length) out += source.charAt(j);
+      }
+      return out;
+    }
+    while ((index = source.indexOf(search, cursor)) !== -1) {
+      out += source.slice(cursor, index);
+      out += typeof replaceValue === 'function'
+        ? String(replaceValue(search, index, source))
+        : String(replaceValue).replace(/\$&/g, search);
+      cursor = index + search.length;
+    }
+    return out + source.slice(cursor);
+  };
+  if (!String.prototype.trimStart) String.prototype.trimStart = function () { return String(this).replace(/^\s+/, ''); };
+  if (!String.prototype.trimEnd) String.prototype.trimEnd = function () { return String(this).replace(/\s+$/, ''); };
+
+  // Chrome 53 has URLSearchParams but does not accept a plain record until Chrome 54.
+  // Wrap only that constructor case and retain the native parser/encoder/prototype.
+  if (window.URLSearchParams) {
+    try {
+      var recordSupported = new window.URLSearchParams({ nuvio_test: '1' }).get('nuvio_test') === '1';
+      if (!recordSupported) {
+        var NativeURLSearchParams = window.URLSearchParams;
+        var URLSearchParamsCompat = function (init) {
+          var isRecord = init && typeof init === 'object' && !Array.isArray(init) &&
+            !(window.Symbol && Symbol.iterator && typeof init[Symbol.iterator] === 'function');
+          if (!isRecord) return new NativeURLSearchParams(init);
+          var params = new NativeURLSearchParams();
+          Object.keys(init).forEach(function (key) { params.append(key, init[key]); });
+          return params;
+        };
+        URLSearchParamsCompat.prototype = NativeURLSearchParams.prototype;
+        window.URLSearchParams = URLSearchParamsCompat;
+      }
+    } catch (e) {}
+  }
+
   if (window.NodeList && !NodeList.prototype.forEach) NodeList.prototype.forEach = Array.prototype.forEach;
   if (window.Element && !Element.prototype.matches) Element.prototype.matches = Element.prototype.webkitMatchesSelector;
   if (window.Element && !Element.prototype.closest) Element.prototype.closest = function (selector) { var e = this; while (e) { if (e.matches(selector)) return e; e = e.parentElement; } return null; };

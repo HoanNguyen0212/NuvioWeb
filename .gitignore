@@ -10,6 +10,7 @@ node_modules/
 *.wgt
 dist/
 .cache/
+.artifacts/
 .pm2/
 logs/
 app.bundle.js

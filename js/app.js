@@ -3,7 +3,6 @@ import "./core/diagnostics/consoleDebugBuffer.js";
 import { detailWatchedEnrichmentService } from "./data/repository/detailWatchedEnrichmentService.js";
 import { Router } from "./ui/navigation/router.js";
 import { FocusEngine } from "./ui/navigation/focusEngine.js";
-import { PlayerController } from "./core/player/playerController.js";
 import { AuthManager } from "./core/auth/authManager.js";
 import { AuthState } from "./core/auth/authState.js";
 import { ProfileManager } from "./core/profile/profileManager.js";
@@ -12,8 +11,6 @@ import { StartupSyncService } from "./core/profile/startupSyncService.js";
 import { ThemeManager } from "./ui/theme/themeManager.js";
 import { renderAppShell } from "./bootstrap/renderAppShell.js";
 import { renderAddonRemotePage } from "./bootstrap/renderAddonRemotePage.js";
-import { preloadStreamBadgeImages } from "./ui/screens/stream/streamScreen.js";
-import { warmStreamingLibs } from "./runtime/loadStreamingLibs.js";
 import { Platform } from "./platform/index.js";
 import { LocalStore } from "./core/storage/localStore.js";
 import { I18n } from "./i18n/index.js";
@@ -179,9 +176,6 @@ async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
     await I18n.init();
     ThemeManager.apply();
     I18n.apply();
-    void preloadStreamBadgeImages().catch((error) => {
-      console.warn("Stream badge image prerender failed", error);
-    });
   }
   const resumeRoute = restoreWebOsRoute && typeof Router.consumeWebOsResumeRoute === "function"
     ? Router.consumeWebOsResumeRoute()
@@ -354,14 +348,12 @@ async function bootstrapApp() {
 
   markBootStage("Initializing navigation");
   Router.init();
-  PlayerController.init();
 
   FocusEngine.init();
   setupWebOsAppLifecycle();
 
   ThemeManager.apply();
   I18n.apply();
-  warmStreamingLibs({ delayMs: 1400 });
 
   markBootStage("Restoring session");
   AuthManager.subscribe((state) => {

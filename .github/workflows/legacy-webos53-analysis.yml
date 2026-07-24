@@ -45,7 +45,7 @@ jobs:
             echo 'No tests/*.test.mjs files are present in this upstream revision; skipping.'
           fi
 
-      - name: Build Chrome 53 analysis bundle
+      - name: Build Chrome 53 chunked analysis bundle
         env:
           NUVIO_BUILD_METAFILE: "1"
         run: npm run build
@@ -55,10 +55,9 @@ jobs:
 
       - name: Record hashes
         run: |
-          sha256sum dist/app.bundle.js > .cache/legacy-analysis/SHA256SUMS.txt
-          find dist/css -maxdepth 1 -type f -name '*.css' -print0 \
+          find dist -type f \( -name '*.js' -o -name '*.css' \) -print0 \
             | sort -z \
-            | xargs -0 sha256sum >> .cache/legacy-analysis/SHA256SUMS.txt
+            | xargs -0 sha256sum > .cache/legacy-analysis/SHA256SUMS.txt
 
       - name: Upload analysis only
         uses: actions/upload-artifact@v4

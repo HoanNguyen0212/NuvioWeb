@@ -1,25 +1,4 @@
 import { HomeScreen } from "../screens/home/homeScreen.js";
-import { PlayerScreen } from "../screens/player/playerScreen.js";
-import { AccountScreen } from "../screens/account/accountScreen.js";
-import { AuthQrSignInScreen } from "../screens/account/authQrSignInScreen.js";
-import { AuthSignInScreen } from "../screens/account/authSignInScreen.js";
-import { SyncCodeScreen } from "../screens/account/syncCodeScreen.js";
-import { ProfileSelectionScreen } from "../../core/profile/profileSelectionScreen.js";
-import { MetaDetailsScreen } from "../screens/detail/metaDetailsScreen.js";
-import { LibraryScreen } from "../screens/library/libraryScreen.js";
-import { SearchScreen } from "../screens/search/searchScreen.js";
-import { DiscoverScreen } from "../screens/search/discoverScreen.js";
-import { SettingsScreen } from "../screens/settings/settingsScreen.js";
-import { ConsoleDebugScreen } from "../screens/debug/consoleDebugScreen.js";
-import { TraktScreen } from "../screens/trakt/traktScreen.js";
-import { SupportersContributorsScreen } from "../screens/supporters/supportersContributorsScreen.js";
-import { PluginScreen } from "../screens/plugin/pluginScreen.js";
-import { PluginsScreen } from "../screens/plugin/pluginsScreen.js";
-import { CatalogOrderScreen } from "../screens/plugin/catalogOrderScreen.js";
-import { StreamScreen } from "../screens/stream/streamScreen.js";
-import { CastDetailScreen } from "../screens/cast/castDetailScreen.js";
-import { CatalogSeeAllScreen } from "../screens/catalog/catalogSeeAllScreen.js";
-import { FolderDetailScreen } from "../screens/collection/folderDetailScreen.js";
 import { Platform } from "../../platform/index.js";
 import { RouteStateStore } from "./routeStateStore.js";
 import { LocalStore } from "../../core/storage/localStore.js";
@@ -27,6 +6,25 @@ import { LocalStore } from "../../core/storage/localStore.js";
 const ROUTER_PERF_DEBUG = Boolean(
   globalThis.__NUVIO_DEBUG_ROUTER_PERF__ || globalThis.__NUVIO_DEBUG_HOME_PERF__
 );
+
+function lazyRoute(loader) {
+  return {
+    __nuvioLazyRoute: true,
+    loader,
+    promise: null
+  };
+}
+
+function loadScreen(loader, exportName) {
+  return lazyRoute(async () => {
+    const module = await loader();
+    const screen = module?.[exportName];
+    if (!screen) {
+      throw new Error(`Lazy route module did not export ${exportName}`);
+    }
+    return screen;
+  });
+}
 
 function routerPerfNow() {
   return typeof performance !== "undefined" && typeof performance.now === "function"
@@ -75,27 +73,110 @@ export const Router = {
 
   routes: {
     home: HomeScreen,
-    player: PlayerScreen,
-    account: AccountScreen,
-    authQrSignIn: AuthQrSignInScreen,
-    authSignIn: AuthSignInScreen,
-    syncCode: SyncCodeScreen,
-    profileSelection: ProfileSelectionScreen,
-    detail: MetaDetailsScreen,
-    library: LibraryScreen,
-    search: SearchScreen,
-    discover: DiscoverScreen,
-    settings: SettingsScreen,
-    debugConsole: ConsoleDebugScreen,
-    trakt: TraktScreen,
-    supportersContributors: SupportersContributorsScreen,
-    plugin: PluginScreen,
-    plugins: PluginsScreen,
-    catalogOrder: CatalogOrderScreen,
-    stream: StreamScreen,
-    castDetail: CastDetailScreen,
-    catalogSeeAll: CatalogSeeAllScreen,
-    folderDetail: FolderDetailScreen
+    player: loadScreen(
+      () => import(/* webpackChunkName: "route-player" */ "../screens/player/playerRoute.js"),
+      "PlayerScreen"
+    ),
+    account: loadScreen(
+      () => import(/* webpackChunkName: "route-account" */ "../screens/account/accountScreen.js"),
+      "AccountScreen"
+    ),
+    authQrSignIn: loadScreen(
+      () => import(/* webpackChunkName: "route-auth" */ "../screens/account/authQrSignInScreen.js"),
+      "AuthQrSignInScreen"
+    ),
+    authSignIn: loadScreen(
+      () => import(/* webpackChunkName: "route-auth" */ "../screens/account/authSignInScreen.js"),
+      "AuthSignInScreen"
+    ),
+    syncCode: loadScreen(
+      () => import(/* webpackChunkName: "route-auth" */ "../screens/account/syncCodeScreen.js"),
+      "SyncCodeScreen"
+    ),
+    profileSelection: loadScreen(
+      () => import(/* webpackChunkName: "route-profile" */ "../../core/profile/profileSelectionScreen.js"),
+      "ProfileSelectionScreen"
+    ),
+    detail: loadScreen(
+      () => import(/* webpackChunkName: "route-detail" */ "../screens/detail/metaDetailsScreen.js"),
+      "MetaDetailsScreen"
+    ),
+    library: loadScreen(
+      () => import(/* webpackChunkName: "route-library" */ "../screens/library/libraryScreen.js"),
+      "LibraryScreen"
+    ),
+    search: loadScreen(
+      () => import(/* webpackChunkName: "route-search" */ "../screens/search/searchScreen.js"),
+      "SearchScreen"
+    ),
+    discover: loadScreen(
+      () => import(/* webpackChunkName: "route-search" */ "../screens/search/discoverScreen.js"),
+      "DiscoverScreen"
+    ),
+    settings: loadScreen(
+      () => import(/* webpackChunkName: "route-settings" */ "../screens/settings/settingsScreen.js"),
+      "SettingsScreen"
+    ),
+    debugConsole: loadScreen(
+      () => import(/* webpackChunkName: "route-settings-extra" */ "../screens/debug/consoleDebugScreen.js"),
+      "ConsoleDebugScreen"
+    ),
+    trakt: loadScreen(
+      () => import(/* webpackChunkName: "route-settings-extra" */ "../screens/trakt/traktScreen.js"),
+      "TraktScreen"
+    ),
+    supportersContributors: loadScreen(
+      () => import(/* webpackChunkName: "route-settings-extra" */ "../screens/supporters/supportersContributorsScreen.js"),
+      "SupportersContributorsScreen"
+    ),
+    plugin: loadScreen(
+      () => import(/* webpackChunkName: "route-plugins" */ "../screens/plugin/pluginScreen.js"),
+      "PluginScreen"
+    ),
+    plugins: loadScreen(
+      () => import(/* webpackChunkName: "route-plugins" */ "../screens/plugin/pluginsScreen.js"),
+      "PluginsScreen"
+    ),
+    catalogOrder: loadScreen(
+      () => import(/* webpackChunkName: "route-plugins" */ "../screens/plugin/catalogOrderScreen.js"),
+      "CatalogOrderScreen"
+    ),
+    stream: loadScreen(
+      () => import(/* webpackChunkName: "route-stream" */ "../screens/stream/streamScreen.js"),
+      "StreamScreen"
+    ),
+    castDetail: loadScreen(
+      () => import(/* webpackChunkName: "route-cast" */ "../screens/cast/castDetailScreen.js"),
+      "CastDetailScreen"
+    ),
+    catalogSeeAll: loadScreen(
+      () => import(/* webpackChunkName: "route-catalog" */ "../screens/catalog/catalogSeeAllScreen.js"),
+      "CatalogSeeAllScreen"
+    ),
+    folderDetail: loadScreen(
+      () => import(/* webpackChunkName: "route-folder" */ "../screens/collection/folderDetailScreen.js"),
+      "FolderDetailScreen"
+    )
+  },
+
+  async ensureRoute(routeName) {
+    const route = this.routes[routeName];
+    if (!route?.__nuvioLazyRoute) {
+      return route || null;
+    }
+    if (!route.promise) {
+      route.promise = route.loader().catch((error) => {
+        route.promise = null;
+        throw error;
+      });
+    }
+    const screen = await route.promise;
+    this.routes[routeName] = screen;
+    return screen;
+  },
+
+  preloadRoute(routeName) {
+    return this.ensureRoute(routeName);
   },
 
   getRouteStateKey(routeName, params = {}) {
@@ -323,7 +404,7 @@ export const Router = {
       options?.isBackNavigation
     );
 
-    const Screen = this.routes[routeName];
+    const Screen = await this.ensureRoute(routeName);
 
     if (!Screen) {
       console.error("Route not found:", routeName);

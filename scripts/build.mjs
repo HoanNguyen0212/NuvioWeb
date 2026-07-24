@@ -1,7 +1,7 @@
 import { cp, mkdir, readFile, rm, writeFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import webpack from "webpack";
 import postcssGlobalData from "@csstools/postcss-global-data";
 import postcss from "postcss";
 import cssnano from "cssnano";
@@ -428,34 +428,96 @@ async function copyOptionalRootFile(fileName, { fallback = null, defaultContents
   return "generated-default";
 }
 
+async function runWebpack(config) {
+  return new Promise((resolve, reject) => {
+    webpack(config, (error, stats) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      if (!stats || stats.hasErrors()) {
+        reject(new Error(stats?.toString({ colors: false, all: false, errors: true }) || "Webpack failed"));
+        return;
+      }
+      resolve(stats);
+    });
+  });
+}
+
 async function buildBundle() {
   const { version } = await readAppMetadata();
 
-  console.log("starting bundle build...");
-  const result = await build({
-    entryPoints: [path.join(rootDir, "js/app.js")],
-    outfile: path.join(distDir, bundleFileName),
-    bundle: true,
-    minify: !debugBundle,
-    format: "iife",
-    sourcemap: debugBundle,
-    metafile: emitBuildMetafile,
-    target: [`chrome${compatibilityPolicy.chromiumVersion}`],
-    define: {
-      "process.env.NODE_ENV": '"production"',
-      __NUVIO_APP_VERSION__: JSON.stringify(version)
-    }
+  console.log("starting legacy chunked bundle build...");
+  const stats = await runWebpack({
+    mode: debugBundle ? "development" : "production",
+    context: rootDir,
+    entry: path.join(rootDir, "js/app.js"),
+    target: ["web", "es5"],
+    devtool: debugBundle ? "source-map" : false,
+    output: {
+      path: distDir,
+      filename: bundleFileName,
+      chunkFilename: "chunks/[name].[contenthash:8].js",
+      publicPath: "",
+      clean: false,
+      globalObject: "window",
+      uniqueName: "nuvioLegacyWebOs53"
+    },
+    module: {
+      rules: [
+        {
+          test: /\\.js$/,
+          include: path.join(rootDir, "js"),
+          use: {
+            loader: "esbuild-loader",
+            options: {
+              target: `chrome${compatibilityPolicy.chromiumVersion}`
+            }
+          }
+        }
+      ]
+    },
+    optimization: {
+      minimize: !debugBundle,
+      runtimeChunk: false,
+      splitChunks: {
+        chunks: "async",
+        minSize: 12_000,
+        maxAsyncRequests: 8
+      }
+    },
+    plugins: [
+      new webpack.DefinePlugin({
+        "process.env.NODE_ENV": JSON.stringify("production"),
+        __NUVIO_APP_VERSION__: JSON.stringify(version)
+      })
+    ],
+    performance: { hints: false },
+    stats: "errors-warnings"
   });
-  if (emitBuildMetafile && result.metafile) {
+  if (emitBuildMetafile) {
     const reportDir = path.join(rootDir, ".cache", "legacy-analysis");
     await mkdir(reportDir, { recursive: true });
+    const statsJson = stats.toJson({
+      all: false,
+      assets: true,
+      chunks: true,
+      modules: true,
+      nestedModules: true,
+      chunkModules: true,
+      reasons: false
+    });
     await writeFile(
-      path.join(reportDir, "esbuild-meta.json"),
-      `${JSON.stringify(result.metafile, null, 2)}\n`,
+      path.join(reportDir, "webpack-stats.json"),
+      `${JSON.stringify(statsJson, null, 2)}\n`,
       "utf8"
     );
   }
-  console.log("bundle build complete");
+  const emittedAssets = stats.toJson({ all: false, assets: true }).assets || [];
+  const initialBundle = emittedAssets.find((asset) => asset.name === bundleFileName);
+  console.log(
+    `bundle build complete: ${initialBundle?.size || "unknown"} startup bytes, ${emittedAssets.length} JS assets`
+  );
 }
 async function runBuild() {
   try {

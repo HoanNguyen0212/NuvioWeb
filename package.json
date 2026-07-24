@@ -35,9 +35,11 @@
     "esbuild": "^0.27.3",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
+    "esbuild-loader": "^4.5.0",
     "globals": "^16.5.0",
     "postcss": "^8.5.9",
-    "prettier": "^3.8.4"
+    "prettier": "^3.8.4",
+    "webpack": "^5.109.0"
   },
   "dependencies": {
     "dashjs": "4.7.4",

@@ -475,8 +475,11 @@ async function buildBundle() {
     module: {
       rules: [
         {
-          test: /\\.js$/,
-          include: path.join(rootDir, "js"),
+          test: /\.js$/,
+          include: [
+            path.join(rootDir, "js"),
+            path.join(rootDir, "node_modules", "libbitsub", "pkg")
+          ],
           resolve: {
             fullySpecified: false
           },

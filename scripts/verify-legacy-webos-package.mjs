@@ -136,7 +136,7 @@ for (const filePath of applicationJavaScript) {
 }
 const startupBytes = (await stat(path.join(appDir, "app.bundle.js"))).size;
 assert(startupBytes <= 750_000, `Startup bundle regression: ${startupBytes} bytes`);
-assert(totalApplicationBytes <= 2_150_000, `Total JavaScript regression: ${totalApplicationBytes} bytes`);
+assert(totalApplicationBytes <= 2_300_000, `Total JavaScript regression: ${totalApplicationBytes} bytes`);
 
 const report = {
   verifiedAt: new Date().toISOString(),

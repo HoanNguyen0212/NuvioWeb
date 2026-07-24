@@ -454,6 +454,9 @@ async function buildBundle() {
     entry: path.join(rootDir, "js/app.js"),
     target: ["web", "es5"],
     devtool: debugBundle ? "source-map" : false,
+    resolve: {
+      fullySpecified: false
+    },
     output: {
       path: distDir,
       filename: bundleFileName,

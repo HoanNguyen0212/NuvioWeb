@@ -471,6 +471,9 @@ async function buildBundle() {
         {
           test: /\\.js$/,
           include: path.join(rootDir, "js"),
+          resolve: {
+            fullySpecified: false
+          },
           use: {
             loader: "esbuild-loader",
             options: {

@@ -356,15 +356,28 @@ function flattenStreams(streamResult) {
         raw: stream
       };
       if (
-        DirectDebridResolver.shouldListStream(entry) ||
+        isPlayableStreamCandidate(entry) &&
+        (DirectDebridResolver.shouldListStream(entry) ||
         WebOsEngineFsResolver.canResolveStream(entry) ||
-        TizenStreamingServerResolver.canResolveStream(entry)
+        TizenStreamingServerResolver.canResolveStream(entry))
       ) {
         flattened.push(entry);
       }
     });
   });
   return flattened;
+}
+
+function isPlayableStreamCandidate(stream) {
+  const url = String(stream?.url || stream?.externalUrl || stream?.raw?.url || stream?.raw?.externalUrl || "");
+  if (!url) {
+    return false;
+  }
+  // Filter out non-media donation / advertisement links returned by some addons
+  if (/\/(?:donate|donation|telegram|tg|discord)\b/i.test(url)) {
+    return false;
+  }
+  return true;
 }
 
 function mergeStreamItems(existing = [], incoming = []) {

@@ -4946,29 +4946,7 @@ export const PlayerScreen = {
   },
 
   getWebHeaderRestrictedStreamMessage(streamCandidate = this.getCurrentStreamCandidate()) {
-    const candidate = streamCandidate || {};
-    const raw = candidate?.raw || {};
-    const rawBehaviorHints = raw?.behaviorHints || {};
-    const candidateBehaviorHints = candidate?.behaviorHints || {};
-    const requestHeaders = rawBehaviorHints?.proxyHeaders?.request
-      || candidateBehaviorHints?.proxyHeaders?.request;
-    const notWebReadyValue = rawBehaviorHints?.notWebReady
-      ?? candidateBehaviorHints?.notWebReady;
-    const notWebReady = notWebReadyValue === true
-      || String(notWebReadyValue || "").trim().toLowerCase() === "true";
-    const hasRequiredHeaders = requestHeaders
-      && typeof requestHeaders === "object"
-      && Object.entries(requestHeaders).some(([name, value]) => (
-        String(name || "").trim() && String(value ?? "").trim()
-      ));
-    if (!notWebReady || !hasRequiredHeaders) {
-      return "";
-    }
-    return t(
-      "player_error_web_headers_unsupported",
-      {},
-      "This source is not compatible with this device's player because it requires special request headers. Try a different source or contact the add-on provider."
-    );
+    return "";
   },
 
   getPlaybackErrorDetailLines({

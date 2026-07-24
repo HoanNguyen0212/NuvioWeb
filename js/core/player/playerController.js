@@ -2707,27 +2707,10 @@ export const PlayerController = {
 
   shouldForwardHeaderToHls(name) {
     const lower = String(name || "").trim().toLowerCase();
-    if (!lower) {
+    if (!lower || lower === "range" || lower.startsWith("sec-")) {
       return false;
     }
-    if (lower === "range") {
-      return false;
-    }
-    if (lower.startsWith("sec-")) {
-      return false;
-    }
-    const forbidden = new Set([
-      "host",
-      "origin",
-      "referer",
-      "referrer",
-      "user-agent",
-      "content-length",
-      "accept-encoding",
-      "connection",
-      "cookie"
-    ]);
-    return !forbidden.has(lower);
+    return true;
   },
 
   normalizePlaybackHeaders(headers) {

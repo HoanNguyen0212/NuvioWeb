@@ -1,4 +1,40 @@
 /* Performance profile for LG webOS 4.x / Chromium 53 */
+
+/* --- Library & Search Grid Fallbacks (Chrome 53 Flex Layout) --- */
+.library-main .library-grid,
+.library-grid,
+.search-main .discover-grid,
+.discover-grid,
+.search-main .search-grid,
+.search-grid,
+.search-main .seeall-grid,
+.seeall-grid {
+  display: -webkit-flex !important;
+  display: flex !important;
+  -webkit-flex-wrap: wrap !important;
+  flex-wrap: wrap !important;
+  -webkit-justify-content: flex-start !important;
+  justify-content: flex-start !important;
+  align-items: flex-start !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.library-main .library-grid-card,
+.library-grid-card,
+.search-main .discover-card,
+.discover-card,
+.search-main .discover-action-card,
+.discover-action-card,
+.search-main .seeall-card,
+.seeall-card {
+  display: block !important;
+  width: 248px !important;
+  margin-right: 16px !important;
+  margin-bottom: 20px !important;
+  box-sizing: border-box !important;
+}
+
 html.nuvio-legacy-low-power *,
 html.nuvio-legacy-low-power *::before,
 html.nuvio-legacy-low-power *::after {

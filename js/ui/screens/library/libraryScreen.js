@@ -89,13 +89,11 @@ function findNearestNodeByCenterX(referenceNode, nodes = []) {
   if (!referenceNode || !nodes.length) {
     return nodes[0] || null;
   }
-  const referenceRect = referenceNode.getBoundingClientRect();
-  const referenceCenter = referenceRect.left + referenceRect.width / 2;
+  const referenceCenter = Number(referenceNode.offsetLeft || 0) + Number(referenceNode.offsetWidth || 0) / 2;
   let bestNode = nodes[0] || null;
   let bestDistance = Number.POSITIVE_INFINITY;
   nodes.forEach((node) => {
-    const rect = node.getBoundingClientRect();
-    const center = rect.left + rect.width / 2;
+    const center = Number(node.offsetLeft || 0) + Number(node.offsetWidth || 0) / 2;
     const distance = Math.abs(center - referenceCenter);
     if (distance < bestDistance) {
       bestDistance = distance;
@@ -105,11 +103,10 @@ function findNearestNodeByCenterX(referenceNode, nodes = []) {
   return bestNode;
 }
 
-function groupNodesByRow(nodes = [], tolerance = 28) {
+function groupNodesByRow(nodes = [], tolerance = 36) {
   const rows = [];
   nodes.forEach((node) => {
-    const rect = node.getBoundingClientRect();
-    const top = rect.top;
+    const top = Number(node.offsetTop || 0);
     const existingRow = rows.find((row) => Math.abs(row.top - top) <= tolerance);
     if (existingRow) {
       existingRow.nodes.push(node);
@@ -123,7 +120,7 @@ function groupNodesByRow(nodes = [], tolerance = 28) {
   rows.sort((left, right) => left.top - right.top);
   rows.forEach((row) => {
     row.nodes.sort(
-      (left, right) => left.getBoundingClientRect().left - right.getBoundingClientRect().left
+      (left, right) => Number(left.offsetLeft || 0) - Number(right.offsetLeft || 0)
     );
   });
   return rows;
@@ -1179,8 +1176,7 @@ export const LibraryScreen = {
     if (!rows.length) {
       return null;
     }
-    const currentRect = current.getBoundingClientRect();
-    const currentCenterX = currentRect.left + currentRect.width / 2;
+    const currentCenterX = Number(current.offsetLeft || 0) + Number(current.offsetWidth || 0) / 2;
     const rowIndex = rows.findIndex((row) => row.nodes.includes(current));
     if (rowIndex < 0) {
       return null;
@@ -1203,18 +1199,7 @@ export const LibraryScreen = {
       if (!nextRow) {
         return current;
       }
-      let bestNode = nextRow.nodes[0] || null;
-      let bestDistance = Number.POSITIVE_INFINITY;
-      nextRow.nodes.forEach((node) => {
-        const rect = node.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const distance = Math.abs(centerX - currentCenterX);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestNode = node;
-        }
-      });
-      return bestNode;
+      return findNearestNodeByCenterX(current, nextRow.nodes);
     }
     return null;
   },

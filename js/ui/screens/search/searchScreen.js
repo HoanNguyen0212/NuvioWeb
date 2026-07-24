@@ -1612,7 +1612,7 @@ export const SearchScreen = {
       }
     }
     this.query = nextQuery.trim();
-    const delay = this.query.length >= 2 ? 320 : 120;
+    const delay = this.query.length >= 2 ? 150 : 80;
     this.inputSearchTimer = setTimeout(() => {
       this.inputSearchTimer = null;
       void this.runSearchFromInput(input, { autoFocusResults: false });

@@ -18,6 +18,9 @@ const requireConfiguredRuntimeEnv = /^(1|true|yes|on)$/i.test(
   String(process.env.NUVIO_REQUIRE_LOCAL_PROPERTIES || "")
 );
 const debugBundle = /^(1|true|yes|on)$/i.test(String(process.env.NUVIO_DEBUG_BUNDLE || ""));
+const emitBuildMetafile = /^(1|true|yes|on)$/i.test(
+  String(process.env.NUVIO_BUILD_METAFILE || "")
+);
 const legacyViewport = {
   width: 1920,
   height: 1080,
@@ -429,19 +432,29 @@ async function buildBundle() {
   const { version } = await readAppMetadata();
 
   console.log("starting bundle build...");
-  await build({
+  const result = await build({
     entryPoints: [path.join(rootDir, "js/app.js")],
     outfile: path.join(distDir, bundleFileName),
     bundle: true,
     minify: !debugBundle,
     format: "iife",
     sourcemap: debugBundle,
+    metafile: emitBuildMetafile,
     target: [`chrome${compatibilityPolicy.chromiumVersion}`],
     define: {
       "process.env.NODE_ENV": '"production"',
       __NUVIO_APP_VERSION__: JSON.stringify(version)
     }
   });
+  if (emitBuildMetafile && result.metafile) {
+    const reportDir = path.join(rootDir, ".cache", "legacy-analysis");
+    await mkdir(reportDir, { recursive: true });
+    await writeFile(
+      path.join(reportDir, "esbuild-meta.json"),
+      `${JSON.stringify(result.metafile, null, 2)}\n`,
+      "utf8"
+    );
+  }
   console.log("bundle build complete");
 }
 async function runBuild() {

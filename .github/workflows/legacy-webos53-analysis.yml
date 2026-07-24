@@ -1,0 +1,64 @@
+name: Legacy webOS 53 analysis
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - legacy-webos53-lite
+    paths:
+      - "js/**"
+      - "css/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/legacy-webos53-analysis.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: legacy-webos53-analysis-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Chrome 53 analysis bundle
+        env:
+          NUVIO_BUILD_METAFILE: "1"
+        run: npm run build
+
+      - name: Generate bundle report
+        run: node scripts/analyze-legacy-bundle.mjs
+
+      - name: Record hashes
+        run: |
+          sha256sum dist/app.bundle.js > .cache/legacy-analysis/SHA256SUMS.txt
+          find dist/css -maxdepth 1 -type f -name '*.css' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum >> .cache/legacy-analysis/SHA256SUMS.txt
+
+      - name: Upload analysis only
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-webos53-analysis-${{ github.sha }}
+          path: .cache/legacy-analysis/
+          if-no-files-found: error
+          retention-days: 14

@@ -3175,42 +3175,42 @@ export const HomeScreen = {
   getInitialCatalogLoadCount() {
     if (this.isPerformanceConstrained()) {
       if (this.isLegacyTvRuntime()) {
-        return 4;
+        return 3;
       }
-      return 5;
+      return 4;
     }
     if (Platform.isWebOS()) {
       if (this.hasCollectionHomeRows()) {
-        return 4;
+        return 3;
       }
       const webOsMajor = Number(Platform.getWebOsMajorVersion?.() || 0);
       if (webOsMajor > 0 && webOsMajor <= 5) {
-        return 4;
+        return 3;
       }
-      return Math.min(HOME_INITIAL_CATALOG_LOAD, 6);
+      return Math.min(HOME_INITIAL_CATALOG_LOAD, 5);
     }
     if (Platform.isTizen()) {
-      return Math.min(HOME_INITIAL_CATALOG_LOAD, 6);
+      return Math.min(HOME_INITIAL_CATALOG_LOAD, 5);
     }
     return HOME_INITIAL_CATALOG_LOAD;
   },
 
   getDeferredCatalogBatchSize() {
     if (this.isPerformanceConstrained()) {
-      return this.isLegacyTvRuntime() ? 2 : 4;
+      return this.isLegacyTvRuntime() ? 3 : 4;
     }
     if (Platform.isWebOS()) {
       if (this.hasCollectionHomeRows()) {
-        return 4;
+        return 3;
       }
       const webOsMajor = Number(Platform.getWebOsMajorVersion?.() || 0);
       if (webOsMajor > 0 && webOsMajor <= 5) {
-        return 4;
+        return 3;
       }
-      return 8;
+      return 6;
     }
     if (Platform.isTizen()) {
-      return 8;
+      return 6;
     }
     return 0;
   },
@@ -3286,20 +3286,18 @@ export const HomeScreen = {
       (direction === "left" || direction === "right") &&
       isFastHorizontalNavigationEnabled()
     ) {
-      // Match Android TV's fast-horizontal D-pad gate while preserving
-      // the existing vertical and constrained-runtime throttles.
-      return 48;
+      return 36;
+    }
+    if (this.isLegacyTvRuntime()) {
+      return direction === "up" || direction === "down" ? 75 : 45;
     }
     if (!Platform.isBrowser()) {
       return direction === "up" || direction === "down"
         ? MODERN_HOME_CONSTANTS.verticalKeyRepeatThrottleMs
         : MODERN_HOME_CONSTANTS.keyRepeatThrottleMs;
     }
-    if (this.isLegacyTvRuntime()) {
-      return Math.max(MODERN_HOME_CONSTANTS.keyRepeatThrottleMs, 120);
-    }
     if (this.isPerformanceConstrained()) {
-      return Math.max(MODERN_HOME_CONSTANTS.keyRepeatThrottleMs, 100);
+      return Math.max(MODERN_HOME_CONSTANTS.keyRepeatThrottleMs, 80);
     }
     return MODERN_HOME_CONSTANTS.keyRepeatThrottleMs;
   },

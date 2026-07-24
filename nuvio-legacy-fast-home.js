@@ -97,6 +97,11 @@
   style.textContent =
     ".nuvio-legacy-low-power .home-catalog-row{" +
       "contain:layout paint;" +
+    "}" +
+    ".nuvio-legacy-low-power .home-content-card," +
+    ".nuvio-legacy-low-power .home-poster-frame," +
+    ".nuvio-legacy-low-power .home-row-track{" +
+      "contain:layout paint style;" +
     "}";
   (document.head || document.documentElement).appendChild(style);
 

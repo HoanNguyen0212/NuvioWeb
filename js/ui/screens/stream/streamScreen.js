@@ -377,6 +377,18 @@ function isPlayableStreamCandidate(stream) {
   if (/\/(?:donate|donation|telegram|tg|discord)\b/i.test(url)) {
     return false;
   }
+  // Filter out non-streamable ZIP archives (e.g. .mkv.zip)
+  if (/\.zip(?:$|\?)/i.test(url)) {
+    return false;
+  }
+  // Filter out 10Gbps Download-only web pages (hubcloud.cx / gpdl.hubcloud.cx)
+  if (/\b(?:hubcloud|gpdl\.hubcloud)\.cx\b/i.test(url)) {
+    return false;
+  }
+  // Filter out non-direct redirect shorteners that require browser interaction
+  if (/\b(?:hub\.pyramid\.surf|hub\.latent\.click|bzzhr\.co)\b/i.test(url)) {
+    return false;
+  }
   return true;
 }
 

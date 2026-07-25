@@ -2734,7 +2734,8 @@ export const PlayerController = {
       backBufferLength: isWebOs ? 30 : 90,
       maxBufferLength: isWebOs ? 18 : 30,
       maxMaxBufferLength: isWebOs ? 24 : 60,
-      maxBufferHole: 0.5,
+      maxBufferHole: 0.1,
+      highBufferWatchdogPeriod: 1,
       startFragPrefetch: false,
       fragLoadingTimeOut: isWebOs ? 18000 : 20000,
       manifestLoadingTimeOut: isWebOs ? 18000 : 20000,
@@ -2893,6 +2894,17 @@ export const PlayerController = {
           hlsErrorType: "attach",
           hlsErrorDetails: String(error?.message || error || "")
         });
+      }
+    });
+
+    hls.on(Hls.Events.FRAG_PARSING_METADATA, () => {
+      if (isWebOs && this.video && !this.__webosAudioSynced) {
+        this.__webosAudioSynced = true;
+        try {
+          if (this.video.currentTime > 0.1) {
+            this.video.currentTime += 0.001;
+          }
+        } catch (_) {}
       }
     });
 

@@ -7369,7 +7369,8 @@ export const HomeScreen = {
 
     const progressiveInitialRows = new Map();
     const initialRows = await this.fetchCatalogRows(initialDescriptors, {
-      allowLoading: true,
+      allowLoading: false,
+      timeoutMs: 1500,
       onRow: (row) => {
         if (token !== this.homeLoadToken || Router.getCurrent() !== "home") {
           return;
@@ -7460,7 +7461,8 @@ export const HomeScreen = {
       setTimeout(() => {
         if (token !== this.homeLoadToken || Router.getCurrent() !== "home") return;
         this.fetchCatalogRows(deferredDescriptors, {
-          allowLoading: true,
+          allowLoading: false,
+          timeoutMs: 3000,
           batchSize: this.getDeferredCatalogBatchSize(),
           onBatch: progressiveDeferredRows
             ? (batchRows) => {

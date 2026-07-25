@@ -216,15 +216,20 @@ html.nuvio-legacy-low-power .player-subtitle-modal .player-dialog-item {
 }
 html.nuvio-legacy-low-power .player-subtitle-modal .player-dialog-item-main {
   display: block !important;
+  position: static !important;
   padding-right: 42px !important;
   font-size: 22px !important;
   line-height: 26px !important;
 }
 html.nuvio-legacy-low-power .player-subtitle-modal .player-dialog-item-sub {
   display: block !important;
+  position: static !important;
+  margin-top: 4px !important;
   padding-right: 42px !important;
   font-size: 16px !important;
   line-height: 20px !important;
+  word-break: break-word !important;
+  white-space: normal !important;
 }
 html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-language-count {
   display: inline-block !important;

@@ -31,7 +31,7 @@ const sensitiveRuntimeKeys = [
 const overlayHashes = {
   "nuvio-legacy-fast-home.js": "6395e3759c6bc79a373b61e1e048113c7f96c16cc3c2f7ead32b75e1abd72359",
   "nuvio-legacy-polyfills.js": "e04badf84cf5b286d318cb0219da0eb17c5aa1932856ed002db575fd3d1505c2",
-  "css/nuvio-legacy-performance.css": "7e5be2217fca0333d36589c2b343f6f80717b82a863553fe60b3133f7201d02c"
+  "css/nuvio-legacy-performance.css": "0d67d40b6f1905823f161183b7519572b370ffad4ae5ac4eb3659f8856807881"
 };
 
 function assert(condition, message) {

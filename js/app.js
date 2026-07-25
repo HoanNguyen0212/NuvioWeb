@@ -24,6 +24,15 @@ import { I18n } from "./i18n/index.js";
   }
 })();
 
+if (typeof window.__loadQrCodeGenerator === "function") {
+  window.addEventListener("hashchange", function () {
+    var route = String(window.location.hash || "").replace("#", "");
+    if (route === "auth" || route === "settings" || route === "qr") {
+      window.__loadQrCodeGenerator();
+    }
+  });
+}
+
 const GUEST_QR_BYPASS_KEY = "skipAuthQrGate";
 const SIGNED_OUT_ALLOWED_ROUTES = new Set(["trakt"]);
 let hasSelectedProfileThisSession = false;

@@ -105,12 +105,16 @@
     "}";
   (document.head || document.documentElement).appendChild(style);
 
-  var observer = new MutationObserver(function (mutations) {
-    mutations.forEach(function (mutation) {
-      Array.prototype.forEach.call(mutation.addedNodes || [], optimize);
+  var observer = null;
+  window.__NUVIO_ENABLE_OBSERVER__ = function () {
+    if (observer) return;
+    observer = new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        Array.prototype.forEach.call(mutation.addedNodes || [], optimize);
+      });
     });
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  };
 
   if (document.body) {
     optimize(document.body);

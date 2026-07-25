@@ -35,11 +35,27 @@
     Promise.any = function (items) {
       return new Promise(function (resolve, reject) {
         var list = [].slice.call(items), errors = [], left = list.length;
-        if (!left) return reject(new Error('All promises were rejected'));
+        if (!left) {
+          var AggregateErrorClass = window.AggregateError || function (errList, msg) {
+            var err = new Error(msg || 'All promises were rejected');
+            err.name = 'AggregateError';
+            err.errors = errList;
+            return err;
+          };
+          return reject(new AggregateErrorClass([], 'All promises were rejected'));
+        }
         list.forEach(function (item, i) {
           Promise.resolve(item).then(resolve, function (error) {
             errors[i] = error;
-            if (!--left) { var e = new Error('All promises were rejected'); e.errors = errors; reject(e); }
+            if (!--left) {
+              var AggregateErrorClass = window.AggregateError || function (errList, msg) {
+                var err = new Error(msg || 'All promises were rejected');
+                err.name = 'AggregateError';
+                err.errors = errList;
+                return err;
+              };
+              reject(new AggregateErrorClass(errors, 'All promises were rejected'));
+            }
           });
         });
       });
@@ -152,14 +168,87 @@
       var listeners = [];
       this.signal = {
         aborted: false,
+        reason: undefined,
+        throwIfAborted: function () {
+          if (this.aborted) {
+            throw this.reason || new Error('Aborted');
+          }
+        },
         addEventListener: function (type, fn) { if (type === 'abort') listeners.push(fn); },
         removeEventListener: function (type, fn) { var i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }
       };
-      this.abort = function () { if (this.signal.aborted) return; this.signal.aborted = true; listeners.slice().forEach(function (fn) { try { fn(); } catch (e) {} }); };
+      this.abort = function (reason) {
+        if (this.signal.aborted) return;
+        this.signal.aborted = true;
+        this.signal.reason = reason !== undefined ? reason : new Error('Aborted');
+        listeners.slice().forEach(function (fn) { try { fn(); } catch (e) {} });
+      };
+    };
+  } else if (window.AbortSignal && !window.AbortSignal.prototype.throwIfAborted) {
+    window.AbortSignal.prototype.throwIfAborted = function () {
+      if (this.aborted) {
+        throw this.reason || new Error('Aborted');
+      }
     };
   }
+
+  if (typeof window.queueMicrotask !== 'function') {
+    window.queueMicrotask = function (fn) {
+      if (typeof fn !== 'function') {
+        throw new TypeError('queueMicrotask callback must be a function');
+      }
+      Promise.resolve().then(fn);
+    };
+  }
+
   if (!window.ResizeObserver) {
-    window.ResizeObserver = function (callback) { this.observe = function (el) { if (callback) callback([{ target: el, contentRect: el.getBoundingClientRect() }]); }; this.unobserve = function () {}; this.disconnect = function () {}; };
+    window.ResizeObserver = function (callback) {
+      var targets = [];
+      var resizeTimer = null;
+      function notify() {
+        resizeTimer = null;
+        if (typeof callback !== 'function' || !targets.length) return;
+        var entries = targets.map(function (el) {
+          var rect = el.getBoundingClientRect();
+          return {
+            target: el,
+            contentRect: rect,
+            borderBoxSize: [{ inlineSize: rect.width, blockSize: rect.height }],
+            contentBoxSize: [{ inlineSize: rect.width, blockSize: rect.height }],
+            devicePixelContentBoxSize: [{ inlineSize: rect.width, blockSize: rect.height }]
+          };
+        });
+        try { callback(entries, this); } catch (e) {}
+      }
+      function onWindowResize() {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(notify, 120);
+      }
+      this.observe = function (el) {
+        if (!el || !(el instanceof Element)) return;
+        if (targets.indexOf(el) === -1) {
+          targets.push(el);
+          if (targets.length === 1) {
+            window.addEventListener('resize', onWindowResize);
+          }
+        }
+      };
+      this.unobserve = function (el) {
+        var idx = targets.indexOf(el);
+        if (idx >= 0) {
+          targets.splice(idx, 1);
+          if (!targets.length) {
+            window.removeEventListener('resize', onWindowResize);
+            if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null; }
+          }
+        }
+      };
+      this.disconnect = function () {
+        targets = [];
+        window.removeEventListener('resize', onWindowResize);
+        if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null; }
+      };
+    };
   }
   if (!window.requestAnimationFrame) window.requestAnimationFrame = function (fn) { return setTimeout(fn, 16); };
   if (!window.cancelAnimationFrame) window.cancelAnimationFrame = clearTimeout;

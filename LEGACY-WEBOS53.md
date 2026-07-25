@@ -28,7 +28,8 @@ Current verified source measurements:
 - Player stack deferred: about 530 KB
 - Detail screen deferred: about 222 KB
 - Settings deferred: about 183 KB
-- Streaming-library warm-up removed from startup; HLS/DASH stay on-demand
+- Trakt / profile / continue-watching API and deferred catalog rows run strictly after first Home mount and focus, avoiding startup rendering block.
+- Skeleton UI and window.__NUVIO_BOOT_MARKS__ timestamp tracker active for boot profiling.
 - Addon-remote UI and profile/background sync are deferred until requested or Home is usable
 - Core-js was removed from the Home bundle; the preloaded legacy file supplies only the APIs missing on Chrome 53, including record-form `URLSearchParams`
 

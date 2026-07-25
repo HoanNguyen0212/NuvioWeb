@@ -29,8 +29,8 @@ const sensitiveRuntimeKeys = [
   "TRAKT_REDIRECT_URI"
 ];
 const overlayHashes = {
-  "nuvio-legacy-fast-home.js": "6395e3759c6bc79a373b61e1e048113c7f96c16cc3c2f7ead32b75e1abd72359",
-  "nuvio-legacy-polyfills.js": "e04badf84cf5b286d318cb0219da0eb17c5aa1932856ed002db575fd3d1505c2",
+  "nuvio-legacy-fast-home.js": "9ca703d3439418eadb0cc4cc37e6a1633b699fc38fcc56b5775040d6ca6b6aa8",
+  "nuvio-legacy-polyfills.js": "2f754ecbadeecf6239f3f847b0f8a335f9f5f623cb8702cdcb8197ce9d5b8c65",
   "css/nuvio-legacy-performance.css": "0d67d40b6f1905823f161183b7519572b370ffad4ae5ac4eb3659f8856807881"
 };
 

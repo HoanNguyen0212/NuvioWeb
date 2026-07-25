@@ -204,6 +204,10 @@
   }
 
   function loadCompatibilityMessages(callback) {
+    if (document.documentElement && document.documentElement.classList.contains("nuvio-legacy-low-power")) {
+      callback(mergeDeviceInfo({}, DEFAULT_COMPATIBILITY_MESSAGES));
+      return;
+    }
     var locale = getPreferredLocale();
     var path = locale === "en" ? "res/values/strings.xml" : "res/values-" + locale + "/strings.xml";
     var xhr;

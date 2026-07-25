@@ -7089,6 +7089,11 @@ export const HomeScreen = {
 
   async mount(params = {}, navigationContext = {}) {
     const mountStart = HOME_PERF_DEBUG ? homePerfNow() : 0;
+    const skeleton = document.getElementById("nuvio-boot-skeleton");
+    if (skeleton) skeleton.classList.add("hidden");
+    if (window.__NUVIO_BOOT_MARK__) window.__NUVIO_BOOT_MARK__("home-mounted");
+    if (typeof window.__NUVIO_ENABLE_OBSERVER__ === "function") window.__NUVIO_ENABLE_OBSERVER__();
+
     this.container = document.getElementById("home");
     const restoredRouteFocusState = navigationContext?.isBackNavigation && navigationContext?.restoredState?.layoutMode
       ? navigationContext.restoredState
@@ -7176,9 +7181,17 @@ export const HomeScreen = {
       }
       const restoredFocus = this.restoreFocusState(returnFocusState);
       if (restoredFocus) {
+        if (window.__NUVIO_BOOT_MARK__ && !this.__bootMarkFocusedLogged) {
+          this.__bootMarkFocusedLogged = true;
+          window.__NUVIO_BOOT_MARK__("home-focused");
+        }
         this.isRestoringFocusFromBack = false;
       } else {
         ScreenUtils.setInitialFocus(this.container, this.getInitialFocusSelector());
+        if (window.__NUVIO_BOOT_MARK__ && !this.__bootMarkFocusedLogged) {
+          this.__bootMarkFocusedLogged = true;
+          window.__NUVIO_BOOT_MARK__("home-focused");
+        }
       }
       this.syncFocusedCollectionCardState();
       if (this.layoutMode === "grid") {
@@ -7301,6 +7314,10 @@ export const HomeScreen = {
       this.isInitialHomeLoading = false;
       this.hasLoadedOnce = true;
       this.render();
+      if (window.__NUVIO_BOOT_MARK__ && !this.__bootMarkFocusedLogged) {
+        this.__bootMarkFocusedLogged = true;
+        window.__NUVIO_BOOT_MARK__("home-focused");
+      }
       return true;
     };
 
@@ -7440,44 +7457,47 @@ export const HomeScreen = {
 
     if (deferredDescriptors.length) {
       const progressiveDeferredRows = this.shouldProgressivelyRenderDeferredRows();
-      this.fetchCatalogRows(deferredDescriptors, {
-        allowLoading: true,
-        batchSize: this.getDeferredCatalogBatchSize(),
-        onBatch: progressiveDeferredRows
-          ? (batchRows) => {
-            if (token !== this.homeLoadToken || Router.getCurrent() !== "home" || !Array.isArray(batchRows) || !batchRows.length) {
-              return;
+      setTimeout(() => {
+        if (token !== this.homeLoadToken || Router.getCurrent() !== "home") return;
+        this.fetchCatalogRows(deferredDescriptors, {
+          allowLoading: true,
+          batchSize: this.getDeferredCatalogBatchSize(),
+          onBatch: progressiveDeferredRows
+            ? (batchRows) => {
+              if (token !== this.homeLoadToken || Router.getCurrent() !== "home" || !Array.isArray(batchRows) || !batchRows.length) {
+                return;
+              }
+              const combinedByKey = new Map((this.rows || []).map((row) => [row.homeCatalogKey, row]));
+              batchRows.forEach((row) => {
+                combinedByKey.set(row.homeCatalogKey, row);
+              });
+              this.rows = this.sortAndFilterRows(Array.from(combinedByKey.values()), this.collections);
+              this.heroCandidates = uniqueById(this.collectHeroCandidates(this.rows));
+              if (!this.heroItem) {
+                this.heroItem = this.pickInitialHero();
+              }
+              this.requestBackgroundRender();
             }
-            const combinedByKey = new Map((this.rows || []).map((row) => [row.homeCatalogKey, row]));
-            batchRows.forEach((row) => {
-              combinedByKey.set(row.homeCatalogKey, row);
-            });
-            this.rows = this.sortAndFilterRows(Array.from(combinedByKey.values()), this.collections);
-            this.heroCandidates = uniqueById(this.collectHeroCandidates(this.rows));
-            if (!this.heroItem) {
-              this.heroItem = this.pickInitialHero();
-            }
-            this.requestBackgroundRender();
+            : null
+        }).then((extraRows) => {
+          if (token !== this.homeLoadToken || Router.getCurrent() !== "home") {
+            return;
           }
-          : null
-      }).then((extraRows) => {
-        if (token !== this.homeLoadToken || Router.getCurrent() !== "home") {
-          return;
-        }
-        const combinedByKey = new Map();
-        [...this.rows, ...extraRows].forEach((row) => {
-          combinedByKey.set(row.homeCatalogKey, row);
+          const combinedByKey = new Map();
+          [...this.rows, ...extraRows].forEach((row) => {
+            combinedByKey.set(row.homeCatalogKey, row);
+          });
+          this.rows = this.sortAndFilterRows(Array.from(combinedByKey.values()), this.collections);
+          this.heroCandidates = uniqueById(this.collectHeroCandidates(this.rows));
+          if (!this.heroItem) {
+            this.heroItem = this.pickInitialHero();
+          }
+          this.requestBackgroundRender();
+          this.retryPendingCatalogRows();
+        }).catch((error) => {
+          console.warn("Deferred home rows load failed", error);
         });
-        this.rows = this.sortAndFilterRows(Array.from(combinedByKey.values()), this.collections);
-        this.heroCandidates = uniqueById(this.collectHeroCandidates(this.rows));
-        if (!this.heroItem) {
-          this.heroItem = this.pickInitialHero();
-        }
-        this.requestBackgroundRender();
-        this.retryPendingCatalogRows();
-      }).catch((error) => {
-        console.warn("Deferred home rows load failed", error);
-      });
+      }, 150);
     }
 
     if (this.layoutMode !== "modern") {

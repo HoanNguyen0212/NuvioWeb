@@ -65,20 +65,94 @@ function buildWebOsIndexHtml({ webOsScriptPath = "" } = {}) {
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <title>${appName}</title>
   <script src="assets/runtime/legacy-features.js"></script>
+  <script>
+    window.__NUVIO_BOOT_MARKS__ = [];
+    window.__NUVIO_BOOT_MARK__ = function (name) {
+      var now = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+      window.__NUVIO_BOOT_MARKS__.push({ name: name, t: Math.round(now) });
+      if (name === "home-focused" || name === "home-mounted") {
+        try {
+          var first = window.__NUVIO_BOOT_MARKS__[0] ? window.__NUVIO_BOOT_MARKS__[0].t : 0;
+          var summary = window.__NUVIO_BOOT_MARKS__.map(function (m) {
+            return m.name + ":" + (m.t - first) + "ms";
+          }).join(" | ");
+          console.log("[nuvio-boot-marks] " + summary);
+        } catch (_) {}
+      }
+    };
+    window.__NUVIO_BOOT_MARK__("boot-start");
+  </script>
   <script src="nuvio-legacy-polyfills.js"></script>
   <script src="nuvio-legacy-fast-home.js"></script>
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/layout.css" />
-  <link rel="stylesheet" href="css/components.css" />
-  <link rel="stylesheet" href="css/themes.css" />
+  <link rel="stylesheet" href="css/components.css" media="print" onload="this.media='all';this.onload=null;" />
+  <link rel="stylesheet" href="css/themes.css" media="print" onload="this.media='all';this.onload=null;" />
   <link rel="stylesheet" href="css/nuvio-legacy-performance.css" />
 </head>
 <body>
+  <div id="nuvio-boot-skeleton" class="nuvio-boot-skeleton">
+    <div class="nuvio-skeleton-sidebar">
+      <div class="nuvio-skeleton-logo"></div>
+      <div class="nuvio-skeleton-nav-item"></div>
+      <div class="nuvio-skeleton-nav-item"></div>
+      <div class="nuvio-skeleton-nav-item"></div>
+    </div>
+    <div class="nuvio-skeleton-main">
+      <div class="nuvio-skeleton-hero"></div>
+      <div class="nuvio-skeleton-row">
+        <div class="nuvio-skeleton-card"></div>
+        <div class="nuvio-skeleton-card"></div>
+        <div class="nuvio-skeleton-card"></div>
+        <div class="nuvio-skeleton-card"></div>
+      </div>
+      <div class="nuvio-skeleton-row">
+        <div class="nuvio-skeleton-card"></div>
+        <div class="nuvio-skeleton-card"></div>
+        <div class="nuvio-skeleton-card"></div>
+        <div class="nuvio-skeleton-card"></div>
+      </div>
+    </div>
+  </div>
+  <style>
+    .nuvio-boot-skeleton {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 99999;
+      background: #0d0d0d;
+      display: flex;
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+    .nuvio-boot-skeleton.hidden { display: none !important; }
+    .nuvio-skeleton-sidebar { width: 104px; padding: 32px 16px; background: #121212; display: flex; flex-direction: column; align-items: center; }
+    .nuvio-skeleton-logo { width: 48px; height: 48px; border-radius: 50%; background: #222; margin-bottom: 40px; }
+    .nuvio-skeleton-nav-item { width: 36px; height: 36px; border-radius: 8px; background: #1c1c1c; margin-bottom: 24px; }
+    .nuvio-skeleton-main { flex: 1; padding: 40px 48px; display: flex; flex-direction: column; }
+    .nuvio-skeleton-hero { width: 100%; height: 280px; border-radius: 16px; background: #181818; margin-bottom: 36px; }
+    .nuvio-skeleton-row { display: flex; gap: 16px; margin-bottom: 28px; }
+    .nuvio-skeleton-card { width: 180px; height: 260px; border-radius: 12px; background: #1c1c1c; flex-shrink: 0; }
+  </style>
+  <script>if (window.__NUVIO_BOOT_MARK__) window.__NUVIO_BOOT_MARK__("skeleton-shown");</script>
   <script src="boot-guard.js"></script>
+  <script>if (window.__NUVIO_BOOT_MARK__) window.__NUVIO_BOOT_MARK__("boot-guard-done");</script>
   <script>window.__NUVIO_PLATFORM__ = "webos";</script>
   <script src="nuvio.env.js"></script>
-  <script src="assets/libs/qrcode-generator.js"></script>
+  <script>
+    window.__loadQrCodeGenerator = function () {
+      if (window.qrcode || window.__qrCodeLoading) return Promise.resolve();
+      window.__qrCodeLoading = true;
+      return new Promise(function (resolve, reject) {
+        var s = document.createElement("script");
+        s.src = "assets/libs/qrcode-generator.js";
+        s.onload = function () { resolve(); };
+        s.onerror = reject;
+        document.body.appendChild(s);
+      });
+    };
+  </script>
 ${webOsScriptTag}  <script>
+    if (window.__NUVIO_BOOT_MARK__) window.__NUVIO_BOOT_MARK__("bundle-start");
     window.NuvioBootGuard.runCompatibilityGate(${compatibilityOptions}, function startNuvioApp() {
       window.NuvioBootGuard.loadScript("app.bundle.js");
     });

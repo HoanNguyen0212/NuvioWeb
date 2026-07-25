@@ -21,7 +21,8 @@ test("legacy polyfills cover the Chrome 53 startup requirements", () => {
         return { left: 0, top: 0, width: 1, height: 1 };
       }
     },
-    addEventListener() {}
+    addEventListener() {},
+    removeEventListener() {}
   };
 
   // Model Chrome 53: URLSearchParams exists, but a plain record is not accepted.
@@ -40,7 +41,7 @@ test("legacy polyfills cover the Chrome 53 startup requirements", () => {
   vm.runInContext(
     "delete Object.fromEntries; delete Array.prototype.flat; delete Array.prototype.flatMap;" +
       "delete String.prototype.replaceAll; delete String.prototype.trimStart;" +
-      "delete String.prototype.trimEnd; this.globalThis = undefined;",
+      "delete String.prototype.trimEnd; this.globalThis = undefined; delete this.queueMicrotask;",
     context
   );
   vm.runInContext(source, context);
@@ -56,6 +57,21 @@ test("legacy polyfills cover the Chrome 53 startup requirements", () => {
           : { done: true } };
       };
       const params = new URLSearchParams({ a: "1", b: "two" });
+      const controller = new AbortController();
+      controller.abort("custom-reason");
+      let threwCorrectly = false;
+      try { controller.signal.throwIfAborted(); } catch (e) { threwCorrectly = e === "custom-reason"; }
+      let microtaskRan = false;
+      queueMicrotask(() => { microtaskRan = true; });
+      let promiseAnyWorked = false;
+      try {
+        Promise.any([]).catch((e) => {
+          if (e && (e.name === 'AggregateError' || e.errors) && Array.isArray(e.errors) && e.errors.length === 0) {
+            promiseAnyWorked = true;
+          }
+        });
+      } catch (_) {}
+
       return {
         globalThis: globalThis === window,
         entries: Object.fromEntries(iterable).b === 2,
@@ -64,7 +80,10 @@ test("legacy polyfills cover the Chrome 53 startup requirements", () => {
         replaceAll: "a-b-a".replaceAll("a", "x") === "x-b-x",
         trim: "  x  ".trimStart().trimEnd() === "x",
         params: params.get("a") === "1" && params.get("b") === "two",
-        instance: params instanceof URLSearchParams
+        instance: params instanceof URLSearchParams,
+        abortReason: controller.signal.reason === "custom-reason" && threwCorrectly,
+        queueMicrotask: typeof queueMicrotask === "function",
+        promiseAny: typeof Promise.any === "function"
       };
     })()` ,
     context
@@ -78,6 +97,9 @@ test("legacy polyfills cover the Chrome 53 startup requirements", () => {
     replaceAll: true,
     trim: true,
     params: true,
-    instance: true
+    instance: true,
+    abortReason: true,
+    queueMicrotask: true,
+    promiseAny: true
   });
 });

@@ -9040,7 +9040,7 @@ export const PlayerScreen = {
     }
     this.seekCommitTimer = setTimeout(() => {
       this.commitSeekPreview();
-    }, 1000);
+    }, 450);
   },
 
   commitSeekPreview() {

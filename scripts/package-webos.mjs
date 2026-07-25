@@ -64,6 +64,8 @@ function buildWebOsIndexHtml({ webOsScriptPath = "" } = {}) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <title>${appName}</title>
+  <link rel="dns-prefetch" href="https://image.tmdb.org" />
+  <link rel="preconnect" href="https://image.tmdb.org" crossorigin />
   <script src="assets/runtime/legacy-features.js"></script>
   <script>
     window.__NUVIO_BOOT_MARKS__ = [];

@@ -7501,14 +7501,17 @@ export const HomeScreen = {
     }
 
     if (this.layoutMode !== "modern") {
-      this.enrichHero(this.heroCandidates[0] || null).then(() => {
-        if (token !== this.homeLoadToken || Router.getCurrent() !== "home") {
-          return;
-        }
-        this.applyHeroToDom();
-      }).catch((error) => {
-        console.warn("Hero async enrichment failed", error);
-      });
+      setTimeout(() => {
+        if (token !== this.homeLoadToken || Router.getCurrent() !== "home") return;
+        this.enrichHero(this.heroCandidates[0] || null).then(() => {
+          if (token !== this.homeLoadToken || Router.getCurrent() !== "home") {
+            return;
+          }
+          this.applyHeroToDom();
+        }).catch((error) => {
+          console.warn("Hero async enrichment failed", error);
+        });
+      }, 500);
     }
 
     {

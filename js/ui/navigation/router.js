@@ -70,6 +70,7 @@ export const Router = {
   routeReturnBackGuardActive: false,
   routeReturnBackGuardUntil: 0,
   routeReturnBackGuardNavigationId: 0,
+  navigationToken: 0,
 
   routes: {
     home: HomeScreen,
@@ -222,7 +223,10 @@ export const Router = {
       restoredState: !shouldClear && key ? RouteStateStore.get(key) : null,
       routeStateKey: key,
       fromHistory: Boolean(options?.fromHistory),
-      isBackNavigation: Boolean(options?.isBackNavigation)
+      isBackNavigation: Boolean(options?.isBackNavigation),
+      routeToken: Number(options?.routeToken || this.navigationToken),
+      isRouteActive: (token) => Number(token) === this.navigationToken
+        && this.current === routeName
     };
   },
 
@@ -395,6 +399,8 @@ export const Router = {
 
   async navigate(routeName, params = {}, options = {}) {
     const navigationStart = ROUTER_PERF_DEBUG ? routerPerfNow() : 0;
+    const routeToken = this.navigationToken + 1;
+    this.navigationToken = routeToken;
 
     const fromHistory = Boolean(options?.fromHistory);
     const skipStackPush = Boolean(options?.skipStackPush);
@@ -406,6 +412,9 @@ export const Router = {
 
     const Screen = await this.ensureRoute(routeName);
 
+    if (routeToken !== this.navigationToken) {
+      return;
+    }
     if (!Screen) {
       console.error("Route not found:", routeName);
       return;
@@ -435,7 +444,10 @@ export const Router = {
 
     this.current = routeName;
     this.currentParams = targetParams;
-    const navigationContext = this.resolveNavigationContext(routeName, this.currentParams, options);
+    const navigationContext = this.resolveNavigationContext(routeName, this.currentParams, {
+      ...options,
+      routeToken
+    });
 
     await Screen.mount(this.currentParams, navigationContext);
     this.completeRouteReturnBackGuard(routeReturnBackGuardNavigationId);
@@ -450,7 +462,11 @@ export const Router = {
 
     // If another navigation happened while this screen was mounting, this
     // navigation is stale and must not write an extra history entry.
-    if (this.current !== routeName || this.currentParams !== targetParams) {
+    if (
+      routeToken !== this.navigationToken
+      || this.current !== routeName
+      || this.currentParams !== targetParams
+    ) {
       return;
     }
 
@@ -543,7 +559,11 @@ export const Router = {
         this.routes[this.current].cleanup?.();
         this.current = "home";
         this.currentParams = {};
-        await this.routes.home.mount();
+        this.navigationToken += 1;
+        await this.routes.home.mount({}, this.resolveNavigationContext("home", {}, {
+          isBackNavigation: true,
+          routeToken: this.navigationToken
+        }));
         this.persistWebOsResumeRoute("home", {});
         return;
       }
@@ -564,8 +584,10 @@ export const Router = {
     this.routes[this.current].cleanup?.();
     this.current = previousRoute;
     this.currentParams = previousParams;
+    this.navigationToken += 1;
     const navigationContext = this.resolveNavigationContext(previousRoute, previousParams, {
-      isBackNavigation: true
+      isBackNavigation: true,
+      routeToken: this.navigationToken
     });
 
     await this.routes[previousRoute].mount(previousParams, navigationContext);

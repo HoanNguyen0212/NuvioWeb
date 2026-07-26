@@ -58,15 +58,29 @@ function getSearchCache(key) {
     searchResultCache.delete(key);
     return null;
   }
+  // Refresh insertion order so eviction follows actual recent usage.
+  searchResultCache.delete(key);
+  searchResultCache.set(key, entry);
   return entry.items;
 }
 
 function setSearchCache(key, items) {
-  if (searchResultCache.size >= SEARCH_CACHE_MAX_ENTRIES) {
+  if (searchResultCache.has(key)) {
+    searchResultCache.delete(key);
+  }
+  while (searchResultCache.size >= SEARCH_CACHE_MAX_ENTRIES) {
     const firstKey = searchResultCache.keys().next().value;
-    if (firstKey) searchResultCache.delete(firstKey);
+    if (firstKey == null) break;
+    searchResultCache.delete(firstKey);
   }
   searchResultCache.set(key, { timestamp: Date.now(), items });
+}
+
+function recordSearchMetric(name) {
+  if (!globalThis?.__NUVIO_DEBUG_LEGACY_METRICS__) return;
+  const root = globalThis.__NUVIO_LEGACY_METRICS__ || (globalThis.__NUVIO_LEGACY_METRICS__ = {});
+  const search = root.search || (root.search = {});
+  search[name] = Number(search[name] || 0) + 1;
 }
 
 function clamp(value, min, max) {
@@ -389,7 +403,7 @@ export const SearchScreen = {
     const snapshot = restoredState && typeof restoredState === "object" ? restoredState : null;
     this.query = hasExplicitQuery ? incomingQuery : String(snapshot?.query || "").trim();
     this.mode = hasExplicitQuery
-      ? incomingQuery.length >= 2
+      ? incomingQuery.length >= SEARCH_MIN_QUERY_LENGTH
         ? "search"
         : "idle"
       : String(
@@ -463,9 +477,29 @@ export const SearchScreen = {
     });
   },
 
-  async refreshWatchedTitleIds() {
+  async refreshWatchedTitleIds(token = this.loadToken) {
     const watchedItems = await watchedItemsRepository.getAll(5000).catch(() => []);
+    if (token !== this.loadToken || Router.getCurrent() !== "search") {
+      return;
+    }
     this.watchedTitleIds = buildWatchedTitleIdSet(watchedItems);
+    this.patchWatchedTitleBadges();
+  },
+
+  patchWatchedTitleBadges() {
+    const cards = this.container?.querySelectorAll?.(".search-result-card[data-item-id]") || [];
+    Array.from(cards).forEach((card) => {
+      const wrap = card.querySelector(".search-result-poster-wrap");
+      if (!wrap) return;
+      const watched = isTitleItemWatched({ id: card.dataset.itemId }, this.watchedTitleIds);
+      const badge = wrap.querySelector(".title-watched-badge");
+      if (watched && !badge) {
+        wrap.insertAdjacentHTML("beforeend", renderTitleWatchedBadge());
+      } else if (!watched && badge) {
+        badge.remove();
+      }
+    });
+    recordSearchMetric("watchedBadgePatches");
   },
 
   captureLiveViewState() {
@@ -524,7 +558,7 @@ export const SearchScreen = {
     this.pendingPosterHoldTarget = null;
     this.pendingPosterHoldTimer = null;
     this.hydrateFromRouteState(navigationContext?.restoredState || null, params);
-    await this.refreshWatchedTitleIds();
+    this.watchedTitleIds = new Set();
     if (!navigationContext?.isBackNavigation) {
       this.focusZone = "content";
       this.sidebarExpanded = false;
@@ -532,6 +566,8 @@ export const SearchScreen = {
       this.pillIconOnly = false;
     }
     this.loadToken = (this.loadToken || 0) + 1;
+    const mountToken = this.loadToken;
+    void this.refreshWatchedTitleIds(mountToken);
     const hasExplicitQuery = Boolean(String(params.query || "").trim());
     const restoredQuery = String(navigationContext?.restoredState?.query || "").trim();
     const shouldUseRestoredState = Boolean(
@@ -592,6 +628,7 @@ export const SearchScreen = {
   },
 
   renderResultsOnly() {
+    recordSearchMetric("fullResultsRebuilds");
     const content = this.container?.querySelector(".search-content");
     const header = content?.querySelector(".search-header");
     const input = this.container?.querySelector("#searchInput");
@@ -903,6 +940,7 @@ export const SearchScreen = {
   },
 
   render() {
+    recordSearchMetric("fullScreenRenders");
     this.cancelScheduledRender();
     const queryText = this.query || "";
     this.container.innerHTML = `
@@ -1161,7 +1199,7 @@ export const SearchScreen = {
     }
     const rowKey = String(rowNodes[0]?.dataset?.rowKey || "");
     const storedIndex = rowKey ? Number(this.rowFocusedIndexByKey?.[rowKey]) : Number.NaN;
-    const preferredIndex = Number.isFinite(storedIndex) ? storedIndex : 0;
+    const preferredIndex = Number.isFinite(storedIndex) ? storedIndex : Number(fallbackCol || 0);
     return rowNodes[Math.max(0, Math.min(rowNodes.length - 1, preferredIndex))] || rowNodes[0];
   },
 
@@ -1775,14 +1813,27 @@ export const SearchScreen = {
   },
 
   bindActionEvents() {
-    this.container?.querySelectorAll("[data-action]").forEach((node) => {
-      if (node.__boundActionListeners) return;
-      node.__boundActionListeners = true;
-      if (node.dataset.action === "searchInput") return;
-      node.addEventListener("click", () => {
-        this.activateActionNode(node);
-      });
-    });
+    if (!this.container || this.delegatedActionClickHandler) return;
+    this.delegatedActionClickHandler = (event) => {
+      let node = event.target;
+      while (node && node !== this.container) {
+        if (node.nodeType === 1 && node.getAttribute("data-action")) {
+          if (node.dataset.action !== "searchInput") {
+            this.activateActionNode(node);
+          }
+          return;
+        }
+        node = node.parentNode;
+      }
+    };
+    this.container.addEventListener("click", this.delegatedActionClickHandler);
+  },
+
+  unbindActionEvents() {
+    if (this.container && this.delegatedActionClickHandler) {
+      this.container.removeEventListener("click", this.delegatedActionClickHandler);
+    }
+    this.delegatedActionClickHandler = null;
   },
 
   activateActionNode(node) {
@@ -2066,6 +2117,8 @@ export const SearchScreen = {
   },
 
   cleanup() {
+    this.loadToken = (this.loadToken || 0) + 1;
+    this.unbindActionEvents();
     this.cancelScheduledRender();
     this.cancelPendingPosterHold();
     this.posterOptionsMenu = null;

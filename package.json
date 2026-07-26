@@ -5,6 +5,8 @@
   "version": "0.3.24",
   "scripts": {
     "build": "node ./scripts/build.mjs",
+    "build:webos53-fastboot": "node ./scripts/build.mjs",
+    "package:webos53-fastboot": "npm run build:webos53-fastboot && node ./scripts/package-webos.mjs",
     "build:on-release": "node ./scripts/release-build-poller.mjs",
     "install:webos": "node ./scripts/ares-install-webos.mjs",
     "inspect:webos": "node ./scripts/ares-inspect-webos.mjs",

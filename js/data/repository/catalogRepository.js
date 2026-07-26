@@ -43,33 +43,96 @@ class CatalogRepository {
     });
 
     return safeApiCall(() =>
-      CatalogApi.getCatalog(url).then((dto) => {
-        const items = (dto?.metas || []).map((meta) => ({
-          ...this.mapMeta(meta),
-          addonBaseUrl,
-          addonId,
-          addonName,
-          catalogType: type
-        }));
-
-        const row = {
-          addonId,
-          addonName,
-          addonBaseUrl,
-          catalogId,
-          catalogName,
-          apiType: type,
-          items,
-          isLoading: false,
-          hasMore: Boolean(supportsSkip && items.length > 0),
-          currentPage: Math.floor(skip / 100),
-          supportsSkip
-        };
-
-        this.catalogCache.set(cacheKey, row);
-        return row;
-      })
+      CatalogApi.getCatalog(url).then((dto) => this.mapCatalogResponse(dto, {
+        cacheKey,
+        addonBaseUrl,
+        addonId,
+        addonName,
+        catalogId,
+        catalogName,
+        type,
+        skip,
+        supportsSkip
+      }))
     );
+  }
+
+  getCatalogCancelable({
+    addonBaseUrl,
+    addonId,
+    addonName,
+    catalogId,
+    catalogName,
+    type,
+    skip = 0,
+    extraArgs = {},
+    supportsSkip = true
+  }) {
+    const cacheKey = this.buildCacheKey({ addonId, type, catalogId, skip, extraArgs });
+    const cached = this.catalogCache.get(cacheKey);
+    if (cached) {
+      return {
+        promise: Promise.resolve({ status: "success", data: cached }),
+        cancel() {}
+      };
+    }
+    const url = this.buildCatalogUrl({
+      baseUrl: addonBaseUrl,
+      type,
+      catalogId,
+      skip,
+      extraArgs
+    });
+    const request = CatalogApi.getCatalogCancelable(url);
+    return {
+      promise: safeApiCall(() => request.promise.then((dto) => this.mapCatalogResponse(dto, {
+        cacheKey,
+        addonBaseUrl,
+        addonId,
+        addonName,
+        catalogId,
+        catalogName,
+        type,
+        skip,
+        supportsSkip
+      }))),
+      cancel: request.cancel
+    };
+  }
+
+  mapCatalogResponse(dto, {
+    cacheKey,
+    addonBaseUrl,
+    addonId,
+    addonName,
+    catalogId,
+    catalogName,
+    type,
+    skip,
+    supportsSkip
+  }) {
+    const items = (dto?.metas || []).map((meta) => ({
+      ...this.mapMeta(meta),
+      addonBaseUrl,
+      addonId,
+      addonName,
+      catalogType: type
+    }));
+    const row = {
+      addonId,
+      addonName,
+      addonBaseUrl,
+      catalogId,
+      catalogName,
+      apiType: type,
+      items,
+      isLoading: false,
+      hasMore: Boolean(supportsSkip && items.length > 0),
+      currentPage: Math.floor(skip / 100),
+      supportsSkip
+    };
+    this.catalogCache.set(cacheKey, row);
+    return row;
   }
 
   buildCatalogUrl({ baseUrl, type, catalogId, skip = 0, extraArgs = {} }) {

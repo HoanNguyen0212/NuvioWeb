@@ -314,13 +314,16 @@ function formatReleaseYear(item = {}) {
   return "";
 }
 
-async function withTimeout(promise, ms, fallbackValue) {
+async function withTimeout(promise, ms, fallbackValue, onTimeout = null) {
   let timer = null;
   try {
     return await Promise.race([
       promise,
       new Promise((resolve) => {
-        timer = setTimeout(() => resolve(fallbackValue), ms);
+        timer = setTimeout(() => {
+          if (typeof onTimeout === "function") onTimeout();
+          resolve(fallbackValue);
+        }, ms);
       })
     ]);
   } finally {
@@ -552,6 +555,7 @@ export const SearchScreen = {
     this.voiceRecognition = this.voiceRecognition || null;
     this.searchToastTimer = null;
     this.inputSearchTimer = null;
+    this.activeSearchRequests = [];
     this.posterOptionsMenu = null;
     this.posterOptionsController = null;
     this.pendingPosterOptionsFocusId = "";
@@ -792,6 +796,16 @@ export const SearchScreen = {
       });
   },
 
+  cancelActiveSearchRequests() {
+    const requests = Array.isArray(this.activeSearchRequests) ? this.activeSearchRequests.splice(0) : [];
+    requests.forEach((request) => {
+      try {
+        request.cancel();
+        recordSearchMetric("requestsCancelled");
+      } catch (_) {}
+    });
+  },
+
   async searchRows(query, { token = this.loadToken } = {}) {
     const addons = await addonRepository.getInstalledAddons();
     const searchableCatalogs = buildSearchTargets(addons);
@@ -805,21 +819,26 @@ export const SearchScreen = {
         return { catalog, result: { status: "success", data: { items: cached } } };
       }
 
+      const request = catalogRepository.getCatalogCancelable({
+        addonBaseUrl: catalog.addonBaseUrl,
+        addonId: catalog.addonId,
+        addonName: catalog.addonName,
+        catalogId: catalog.catalogId,
+        catalogName: catalog.catalogName,
+        type: catalog.type,
+        skip: 0,
+        extraArgs: { search: query },
+        supportsSkip: catalog.supportsSkip
+      });
+      this.activeSearchRequests = this.activeSearchRequests || [];
+      this.activeSearchRequests.push(request);
+      recordSearchMetric("requestsStarted");
       try {
         const result = await withTimeout(
-          catalogRepository.getCatalog({
-            addonBaseUrl: catalog.addonBaseUrl,
-            addonId: catalog.addonId,
-            addonName: catalog.addonName,
-            catalogId: catalog.catalogId,
-            catalogName: catalog.catalogName,
-            type: catalog.type,
-            skip: 0,
-            extraArgs: { search: query },
-            supportsSkip: catalog.supportsSkip
-          }),
+          request.promise,
           getSearchCatalogTimeoutMs(),
-          { status: "error", message: "timeout" }
+          { status: "error", message: "timeout" },
+          request.cancel
         );
         if (result?.status === "success" && Array.isArray(result?.data?.items)) {
           setSearchCache(cacheKey, result.data.items);
@@ -831,6 +850,9 @@ export const SearchScreen = {
           catalog,
           result: { status: "error", message: "fetch_failed" }
         };
+      } finally {
+        const requestIndex = this.activeSearchRequests.indexOf(request);
+        if (requestIndex >= 0) this.activeSearchRequests.splice(requestIndex, 1);
       }
     };
 
@@ -1737,6 +1759,7 @@ export const SearchScreen = {
     this.mode = nextMode;
     this.pendingAutoFocusResults = Boolean(autoFocusResults && nextMode === "search");
     this.lastSubmittedQuery = nextQuery;
+    this.cancelActiveSearchRequests();
     this.loadToken = (this.loadToken || 0) + 1;
     this.captureLiveViewState();
     await this.reloadRows();
@@ -1925,6 +1948,7 @@ export const SearchScreen = {
       this.mode =
         this.query.length >= SEARCH_MIN_QUERY_LENGTH ? "search" : "idle";
       this.pendingAutoFocusResults = this.mode === "search";
+      this.cancelActiveSearchRequests();
       this.loadToken = (this.loadToken || 0) + 1;
       this.renderLoading();
       await this.reloadRows();
@@ -2165,6 +2189,7 @@ export const SearchScreen = {
   },
 
   cleanup() {
+    this.cancelActiveSearchRequests();
     this.loadToken = (this.loadToken || 0) + 1;
     this.unbindActionEvents();
     this.cancelScheduledRender();

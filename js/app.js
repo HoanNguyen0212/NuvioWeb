@@ -244,7 +244,9 @@ async function routeAfterAuthentication() {
     return;
   }
 
-  await enterWithLastProfile({ restoreWebOsRoute: true });
+  // Launching from the app icon always starts at Home. Do not restore a stale
+  // Search/Detail/Player route left by the previous process.
+  await enterWithLastProfile({ restoreWebOsRoute: false });
 }
 
 function setupWebOsAppLifecycle() {
@@ -422,7 +424,7 @@ async function bootstrapApp() {
           ProfileManager.isRememberLastProfileEnabled() &&
           ProfileManager.hasEverSelectedProfile()
         ) {
-          enterWithLastProfile({ restoreWebOsRoute: true }).catch((error) => {
+          enterWithLastProfile({ restoreWebOsRoute: false }).catch((error) => {
             console.warn("Failed to enter with last profile", error);
             ProfileManager.clearActiveProfile();
             if (Router.getCurrent() !== "profileSelection") {

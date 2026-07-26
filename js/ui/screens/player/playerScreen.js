@@ -2337,6 +2337,9 @@ export const PlayerScreen = {
     this.progressPointerShell = null;
     this.progressPointerDownHandler = null;
     this.tickTimer = null;
+    this.uiTickTimer = null;
+    this.uiTickFrame = null;
+    this.lastUiTickAt = 0;
     this.skipIntervalCheckTimer = null;
     this.skipIntervalsRequestToken = Number(this.skipIntervalsRequestToken || 0);
     this.videoListeners = [];
@@ -2440,7 +2443,7 @@ export const PlayerScreen = {
     if (!this.isExternalFrameMode()) {
       this.loadSubtitles();
       this.syncTrackState();
-      this.tickTimer = setInterval(() => this.updateUiTick(), 1000);
+      this.tickTimer = setInterval(() => this.scheduleUiTick("interval"), 1000);
       this.startSkipIntervalCheckTimer();
       this.endedHandler = () => {
         this.handlePlaybackEnded();
@@ -4952,7 +4955,7 @@ export const PlayerScreen = {
     return `HTTP ${status}${providerHint}`;
   },
 
-  getWebHeaderRestrictedStreamMessage(streamCandidate = this.getCurrentStreamCandidate()) {
+  getWebHeaderRestrictedStreamMessage(_streamCandidate = this.getCurrentStreamCandidate()) {
     return "";
   },
 
@@ -7622,11 +7625,11 @@ export const PlayerScreen = {
       this.attemptPendingPlaybackRestore();
       this.refreshWebOsEmbeddedHtmlSubtitleOverlayIfNeeded();
       this.renderHtmlSubtitleOverlayAtCurrentTime();
-      this.updateUiTick();
+      this.scheduleUiTick("timeupdate");
     };
 
     const onProgress = () => {
-      this.updateUiTick();
+      this.scheduleUiTick("progress");
     };
 
     const onLoadedMetadata = () => {
@@ -8054,19 +8057,59 @@ export const PlayerScreen = {
     }
     this.controlFocusIndex = clamp(this.controlFocusIndex, 0, Math.max(0, controls.length - 1));
 
-    wrap.innerHTML = controls.map((control) => `
-      <button class="player-control-btn focusable${control.primary ? " is-primary" : ""}"
-              data-action="${control.action}"
-              title="${escapeHtml(control.title || "")}">
-        ${control.icon
-          ? ((control.primary || control.useMask)
-            ? `<span class="player-control-icon player-control-icon-mask" style="-webkit-mask-image:url('${escapeHtml(control.icon)}');mask-image:url('${escapeHtml(control.icon)}');" aria-hidden="true"></span>`
-            : `<img class="player-control-icon" src="${control.icon}" alt="" aria-hidden="true" />`)
-          : `<span class="player-control-label">${escapeHtml(control.label || "")}</span>`}
-      </button>
-    `).join("");
+    const structureSignature = controls.map((control) => [
+      control.action,
+      control.icon ? "icon" : "text",
+      control.icon && (control.primary || control.useMask) ? "mask" : "image"
+    ].join(":")).join("|");
+    if (globalThis.__NUVIO_DEBUG_LEGACY_METRICS__) {
+      const root = globalThis.__NUVIO_LEGACY_METRICS__ || (globalThis.__NUVIO_LEGACY_METRICS__ = {});
+      const player = root.player || (root.player = {});
+      player.controlRenderRequests = Number(player.controlRenderRequests || 0) + 1;
+    }
+    let buttons = Array.from(wrap.children || []);
+    const mustRebuild = wrap.dataset.controlStructure !== structureSignature
+      || buttons.length !== controls.length;
+    if (mustRebuild) {
+      wrap.innerHTML = controls.map((control) => `
+        <button class="player-control-btn focusable${control.primary ? " is-primary" : ""}"
+                data-action="${control.action}"
+                title="${escapeHtml(control.title || "")}">
+          ${control.icon
+            ? ((control.primary || control.useMask)
+              ? `<span class="player-control-icon player-control-icon-mask" style="-webkit-mask-image:url('${escapeHtml(control.icon)}');mask-image:url('${escapeHtml(control.icon)}');" aria-hidden="true"></span>`
+              : `<img class="player-control-icon" src="${control.icon}" alt="" aria-hidden="true" />`)
+            : `<span class="player-control-label">${escapeHtml(control.label || "")}</span>`}
+        </button>
+      `).join("");
+      wrap.dataset.controlStructure = structureSignature;
+      buttons = Array.from(wrap.children || []);
+      if (globalThis.__NUVIO_DEBUG_LEGACY_METRICS__) {
+        const root = globalThis.__NUVIO_LEGACY_METRICS__ || (globalThis.__NUVIO_LEGACY_METRICS__ = {});
+        const player = root.player || (root.player = {});
+        player.controlRowRebuilds = Number(player.controlRowRebuilds || 0) + 1;
+      }
+    } else {
+      buttons.forEach((button, index) => {
+        const control = controls[index];
+        button.title = control.title || "";
+        button.classList.toggle("is-primary", Boolean(control.primary));
+        const mask = button.querySelector(".player-control-icon-mask");
+        const image = button.querySelector("img.player-control-icon");
+        const label = button.querySelector(".player-control-label");
+        if (mask) {
+          const iconUrl = `url('${control.icon || ""}')`;
+          mask.style.webkitMaskImage = iconUrl;
+          mask.style.maskImage = iconUrl;
+        } else if (image && image.getAttribute("src") !== String(control.icon || "")) {
+          image.setAttribute("src", control.icon || "");
+        } else if (label && label.textContent !== String(control.label || "")) {
+          label.textContent = control.label || "";
+        }
+      });
+    }
 
-    const buttons = Array.from(wrap.querySelectorAll(".player-control-btn"));
+    buttons = buttons.filter((button) => button.classList.contains("player-control-btn"));
     buttons.forEach((button, index) => {
       button.classList.toggle("focused", this.controlFocusZone === "buttons" && index === this.controlFocusIndex);
     });
@@ -8859,9 +8902,63 @@ export const PlayerScreen = {
     `;
   },
 
+  scheduleUiTick(reason = "event") {
+    if (this.isExternalFrameMode() || !this.playerRouteActive) {
+      return;
+    }
+    if (globalThis.__NUVIO_DEBUG_LEGACY_METRICS__) {
+      const root = globalThis.__NUVIO_LEGACY_METRICS__ || (globalThis.__NUVIO_LEGACY_METRICS__ = {});
+      const player = root.player || (root.player = {});
+      player.uiTickRequests = Number(player.uiTickRequests || 0) + 1;
+      player.lastUiTickReason = reason;
+    }
+    if (this.uiTickTimer != null || this.uiTickFrame != null) {
+      return;
+    }
+    const minimumInterval = this.controlsVisible ? 240 : 900;
+    const elapsed = Date.now() - Number(this.lastUiTickAt || 0);
+    const delay = Math.max(0, minimumInterval - elapsed);
+    const requestFlush = () => {
+      this.uiTickTimer = null;
+      const flush = () => {
+        this.uiTickFrame = null;
+        if (this.playerRouteActive) {
+          this.updateUiTick();
+        }
+      };
+      if (typeof requestAnimationFrame === "function") {
+        this.uiTickFrame = requestAnimationFrame(flush);
+      } else {
+        flush();
+      }
+    };
+    if (delay > 0) {
+      this.uiTickTimer = setTimeout(requestFlush, delay);
+    } else {
+      requestFlush();
+    }
+  },
+
+  clearScheduledUiTick() {
+    if (this.uiTickTimer != null) {
+      clearTimeout(this.uiTickTimer);
+      this.uiTickTimer = null;
+    }
+    if (this.uiTickFrame != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(this.uiTickFrame);
+    }
+    this.uiTickFrame = null;
+  },
+
   updateUiTick() {
     if (this.isExternalFrameMode()) {
       return;
+    }
+    this.lastUiTickAt = Date.now();
+    if (globalThis.__NUVIO_DEBUG_LEGACY_METRICS__) {
+      const root = globalThis.__NUVIO_LEGACY_METRICS__ || (globalThis.__NUVIO_LEGACY_METRICS__ = {});
+      const player = root.player || (root.player = {});
+      player.uiTickFlushes = Number(player.uiTickFlushes || 0) + 1;
     }
     this.ensureNextEpisodeStreamsPrefetch();
     this.shouldShowNextEpisodeCard();
@@ -17165,6 +17262,7 @@ export const PlayerScreen = {
     this.clearMountedExternalSubtitleTracks();
 
     this.clearControlsAutoHide();
+    this.clearScheduledUiTick();
     this.skipIntroAutoHidden = false;
     this.skipIntroCountdownProgress = 0;
     this.skipIntroCountdownLastTickAt = 0;

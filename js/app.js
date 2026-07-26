@@ -158,21 +158,30 @@ async function shouldShowProfileSelection() {
     return { show: false, pinStates: cachedLocks };
   }
 
-  const activeProfileHasPin = Boolean(
-    cachedLocks && (cachedLocks[String(activeProfileId)] || cachedLocks[Number(activeProfileId)])
+  const activeProfileKey = String(activeProfileId);
+  const activeProfileLockKnown = Boolean(
+    cachedLocks
+    && typeof cachedLocks === "object"
+    && Object.prototype.hasOwnProperty.call(cachedLocks, activeProfileKey)
   );
+  const activeProfileHasPin = activeProfileLockKnown && Boolean(cachedLocks[activeProfileKey]);
 
-  // Remember last profile: when enabled and the last used profile has no PIN,
-  // skip the picker and go straight in, matching the Android TV app.
+  // Remember last profile is safe only when the cached lock state explicitly
+  // says that this profile has no PIN. Unknown/missing state fails closed and
+  // opens profile selection instead of bypassing verification during startup.
   if (
     ProfileManager.isRememberLastProfileEnabled() &&
     ProfileManager.hasEverSelectedProfile() &&
+    activeProfileLockKnown &&
     !activeProfileHasPin
   ) {
     return { show: false, pinStates: cachedLocks };
   }
 
-  return { show: profiles.length > 1 || activeProfileHasPin, pinStates: cachedLocks };
+  return {
+    show: profiles.length > 1 || activeProfileHasPin || !activeProfileLockKnown,
+    pinStates: cachedLocks
+  };
 }
 
 async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
@@ -201,15 +210,18 @@ async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
     await Router.navigate("home");
   }
 
-  // Trigger background profile & lock state sync after UI initial render
-  setTimeout(() => {
-    Promise.all([
-      ProfileSyncService.pull(),
-      ProfileSyncService.pullProfileLockStates()
-    ]).catch(() => {});
-  }, 100);
+  // Trigger background profile & lock state sync after UI initial render.
+  globalThis.__NUVIO_BOOT_METRICS__?.mark?.("background-sync-start");
+  const profileBackgroundSync = new Promise((resolve) => {
+    setTimeout(() => {
+      Promise.all([
+        ProfileSyncService.pull(),
+        ProfileSyncService.pullProfileLockStates()
+      ]).then(resolve, resolve);
+    }, 100);
+  });
 
-  void Promise.all([
+  const startupBackgroundSync = Promise.all([
     getStartupSyncService(),
     import(
       /* webpackChunkName: "background-profile-sync" */ "./data/repository/detailWatchedEnrichmentService.js"
@@ -223,6 +235,10 @@ async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
     .catch((error) => {
       console.warn("Profile background sync failed", error);
     });
+
+  void Promise.all([profileBackgroundSync, startupBackgroundSync]).then(() => {
+    globalThis.__NUVIO_BOOT_METRICS__?.mark?.("background-sync-ready");
+  });
 }
 
 async function routeAfterAuthentication() {

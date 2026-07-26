@@ -29,9 +29,9 @@ const sensitiveRuntimeKeys = [
   "TRAKT_REDIRECT_URI"
 ];
 const overlayHashes = {
-  "nuvio-legacy-fast-home.js": "6395e3759c6bc79a373b61e1e048113c7f96c16cc3c2f7ead32b75e1abd72359",
+  "nuvio-legacy-fast-home.js": "ed7d432edead2db98fbd45d2090be30618e86f3ccb79f00e8bce9edad00ab380",
   "nuvio-legacy-polyfills.js": "e04badf84cf5b286d318cb0219da0eb17c5aa1932856ed002db575fd3d1505c2",
-  "css/nuvio-legacy-performance.css": "0d67d40b6f1905823f161183b7519572b370ffad4ae5ac4eb3659f8856807881"
+  "css/nuvio-legacy-performance.css": "8a1050873dfc05c272cc50cf760f518937c09b40e0a030ee02f26260ba8ccaa4"
 };
 
 function assert(condition, message) {
@@ -90,6 +90,16 @@ for (const include of orderedIncludes) {
 }
 assert(indexHtml.includes('"minChrome":53'), "Generated compatibility gate is not Chrome 53");
 assert(indexHtml.includes('"minVersion":4'), "Generated compatibility gate is not webOS 4");
+assert(indexHtml.includes('__NUVIO_BOOT_EPOCH__'), "Generated package is missing the boot epoch");
+assert(indexHtml.includes('"html-start": 0'), "Generated package is missing the initial boot mark");
+
+for (const match of indexHtml.matchAll(/(?:src|href)="([^"?#]+)(?:[?#][^"]*)?"/g)) {
+  const relativeAsset = match[1];
+  assert(
+    await exists(path.join(appDir, relativeAsset)),
+    `Generated index references a missing asset: ${relativeAsset}`
+  );
+}
 
 for (const [relativePath, expectedHash] of Object.entries(overlayHashes)) {
   const sourcePath = path.join(rootDir, relativePath);
@@ -123,7 +133,16 @@ if (await exists(examplePath)) {
 }
 assert(!(await exists(path.join(appDir, "local.properties"))), "local.properties leaked into package");
 
-const javascriptFiles = (await walk(appDir)).filter((filePath) => filePath.endsWith(".js"));
+const stagedFiles = await walk(appDir);
+assert(
+  !stagedFiles.some((filePath) => filePath.endsWith(".map")),
+  "Source maps must not be included in the production package"
+);
+const javascriptFiles = stagedFiles.filter((filePath) => filePath.endsWith(".js"));
+for (const filePath of javascriptFiles) {
+  const source = await readFile(filePath, "utf8");
+  parse(source, { ecmaVersion: 2016, sourceType: "script", allowHashBang: true });
+}
 const applicationJavaScript = javascriptFiles.filter(
   (filePath) => filePath.endsWith("app.bundle.js") || filePath.includes(`${path.sep}chunks${path.sep}`)
 );

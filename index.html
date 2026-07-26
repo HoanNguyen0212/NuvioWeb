@@ -4,6 +4,10 @@
   class="no-flex-gap no-css-math no-backdrop-filter no-aspect-ratio"
 >
   <head>
+    <script>
+      window.__NUVIO_BOOT_EPOCH__ = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+      window.__NUVIO_EARLY_BOOT_MARKS__ = { "html-start": 0 };
+    </script>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta
@@ -97,6 +101,15 @@
     <script src="js/core/diagnostics/bootMetrics.js"></script>
     <script src="nuvio.env.js"></script>
 
+    <script>
+      (function markDirectBundleStart() {
+        var now = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+        var elapsed = Math.max(0, Math.round(now - window.__NUVIO_BOOT_EPOCH__));
+        window.__NUVIO_EARLY_BOOT_MARKS__["compat-start"] = elapsed;
+        window.__NUVIO_EARLY_BOOT_MARKS__["compat-ready"] = elapsed;
+        window.__NUVIO_EARLY_BOOT_MARKS__["bundle-start"] = elapsed;
+      })();
+    </script>
     <script
       src="app.bundle.js?v=20260531supporters2"
       onerror="window.NuvioBootGuard && window.NuvioBootGuard.scriptFailed(this.src)"

@@ -7385,6 +7385,13 @@ export const HomeScreen = {
       this.hasLoadedOnce = true;
       // Immediately render shell with cached data and place initial focus
       this.render();
+      globalThis.__NUVIO_BOOT_METRICS__?.mark?.("home-cache-row");
+      if (this.container?.querySelector?.(".home-row")) {
+        globalThis.__NUVIO_BOOT_METRICS__?.mark?.("first-row");
+      }
+      if (this.container?.querySelector?.(".home-content-card")) {
+        globalThis.__NUVIO_BOOT_METRICS__?.mark?.("first-poster");
+      }
     }
 
     const initialCatalogLoad = this.getInitialCatalogLoadCount();
@@ -7403,6 +7410,7 @@ export const HomeScreen = {
         }
         progressiveInitialRows.set(row.homeCatalogKey, row);
         if (row.items && row.items.length > 0) {
+          globalThis.__NUVIO_BOOT_METRICS__?.mark?.("home-network-row");
           PersistentHomeCache.set(
             currentProfileId,
             row.addonId,
@@ -7469,6 +7477,12 @@ export const HomeScreen = {
       this.isInitialHomeLoading = false;
       this.hasLoadedOnce = true;
       this.render();
+      if (this.container?.querySelector?.(".home-row")) {
+        globalThis.__NUVIO_BOOT_METRICS__?.mark?.("first-row");
+      }
+      if (this.container?.querySelector?.(".home-content-card")) {
+        globalThis.__NUVIO_BOOT_METRICS__?.mark?.("first-poster");
+      }
     }
     logHomePerf("loadData", {
       phase: "first-render",

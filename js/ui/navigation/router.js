@@ -41,6 +41,47 @@ function logRouterPerf(stage, data = {}) {
   } catch (_) {}
 }
 
+function markBootMetric(name) {
+  globalThis.__NUVIO_BOOT_METRICS__?.mark?.(name);
+}
+
+function observeInitialRoutePresentation(routeName, routeToken, bootGuard) {
+  const requestFrame = typeof requestAnimationFrame === "function"
+    ? requestAnimationFrame
+    : (callback) => setTimeout(callback, 16);
+
+  const inspect = () => {
+    if (
+      routeToken !== Router.navigationToken
+      || Router.current !== routeName
+      || !bootGuard?.isActive?.()
+    ) {
+      return;
+    }
+    if (routeName === "home") {
+      if (document.querySelector(".home-row")) {
+        markBootMetric("first-row");
+      }
+      if (document.querySelector(".home-content-card")) {
+        markBootMetric("first-poster");
+      }
+    }
+    const focused = document.querySelector(".focusable.focused, .focused[data-action]");
+    if (focused && document.documentElement.contains(focused) && focused.offsetParent !== null) {
+      markBootMetric("first-focus");
+      if (routeName === "home") {
+        markBootMetric("home-focused");
+      }
+      markBootMetric("boot-ready");
+      bootGuard.ready();
+      return;
+    }
+    requestFrame(inspect);
+  };
+
+  requestFrame(inspect);
+}
+
 const NON_BACKSTACK_ROUTES = new Set([
   "profileSelection",
   "authQrSignIn",
@@ -449,7 +490,12 @@ export const Router = {
       routeToken
     });
 
+    if (bootGuard?.isActive?.()) {
+      observeInitialRoutePresentation(routeName, routeToken, bootGuard);
+    }
+
     await Screen.mount(this.currentParams, navigationContext);
+    markBootMetric("route-mounted");
     this.completeRouteReturnBackGuard(routeReturnBackGuardNavigationId);
     logRouterPerf("navigate", {
       ms: Number((routerPerfNow() - navigationStart).toFixed(2)),
@@ -470,8 +516,16 @@ export const Router = {
       return;
     }
 
-    if (bootGuard && typeof bootGuard.ready === "function") {
-      bootGuard.ready();
+    if (bootGuard?.isActive?.()) {
+      const focused = document.querySelector(".focusable.focused, .focused[data-action]");
+      if (focused && document.documentElement.contains(focused) && focused.offsetParent !== null) {
+        markBootMetric("first-focus");
+        if (routeName === "home") {
+          markBootMetric("home-focused");
+        }
+        markBootMetric("boot-ready");
+        bootGuard.ready();
+      }
     }
 
     if (window?.history && typeof window.history.pushState === "function") {

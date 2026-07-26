@@ -57,6 +57,24 @@
   var lastStage = "Loading startup files";
   var watchdogId = 0;
 
+  function markBoot(name) {
+    var metrics = window.__NUVIO_BOOT_METRICS__;
+    var earlyMarks;
+    var epoch;
+    var now;
+    if (metrics && typeof metrics.mark === "function") {
+      metrics.mark(name);
+      return;
+    }
+    earlyMarks = window.__NUVIO_EARLY_BOOT_MARKS__ || (window.__NUVIO_EARLY_BOOT_MARKS__ = {});
+    if (Object.prototype.hasOwnProperty.call(earlyMarks, name)) {
+      return;
+    }
+    epoch = Number(window.__NUVIO_BOOT_EPOCH__);
+    now = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    earlyMarks[name] = isFinite(epoch) ? Math.max(0, Math.round(now - epoch)) : 0;
+  }
+
   function scheduleWatchdog() {
     if (!active) {
       return;
@@ -508,6 +526,13 @@
     var decision;
     var locale = getPreferredLocale();
 
+    markBoot("compat-start");
+
+    function completeSupported() {
+      markBoot("compat-ready");
+      onSupported();
+    }
+
     function renderUnsupported(resolvedInfo) {
       resolvedInfo.locale = locale;
       loadCompatibilityMessages(function onCompatibilityMessages(messages) {
@@ -516,7 +541,7 @@
     }
 
     if (!options || (options.platform !== "webos" && options.platform !== "tizen")) {
-      onSupported();
+      completeSupported();
       return;
     }
 
@@ -527,21 +552,21 @@
         renderUnsupported(info);
         return;
       }
-      onSupported();
+      completeSupported();
       return;
     }
 
     info = readWebOsInfo();
     decision = compatibilityDecision(info, options);
     if (decision === "supported") {
-      onSupported();
+      completeSupported();
       return;
     }
     enrichWebOsInfo(info, function onWebOsInfo(resolvedInfo) {
       if (compatibilityDecision(resolvedInfo, options) === "unsupported") {
         renderUnsupported(resolvedInfo);
       } else {
-        onSupported();
+        completeSupported();
       }
     });
   }
@@ -555,6 +580,9 @@
       guard.scriptFailed(source);
     };
     guard.stage("Loading " + source);
+    if (/app\.bundle\.js(?:[?#]|$)/.test(String(source || ""))) {
+      markBoot("bundle-start");
+    }
     document.body.appendChild(script);
   }
 
@@ -678,6 +706,7 @@
       stopWatchdog();
       removeOverlay();
       dismissBootWelcome();
+      markBoot("boot-welcome-hidden");
     },
 
     runCompatibilityGate: runCompatibilityGate,

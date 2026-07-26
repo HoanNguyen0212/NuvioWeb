@@ -51,6 +51,25 @@ function getBackInputChannel(event) {
     : "keydown";
 }
 
+function getPointerFocusable(node, root) {
+  var curr = node;
+  while (curr && curr !== root && curr !== document.body) {
+    if (curr.nodeType === 1 && curr.classList && curr.classList.contains("focusable")) {
+      if (
+        curr.disabled ||
+        curr.classList.contains("is-disabled") ||
+        curr.classList.contains("disabled") ||
+        curr.getAttribute("aria-disabled") === "true"
+      ) {
+        return null;
+      }
+      return curr;
+    }
+    curr = curr.parentNode;
+  }
+  return null;
+}
+
 export const FocusEngine = {
   lastBackHandledAt: 0,
   lastBackHandledChannel: "",
@@ -58,6 +77,16 @@ export const FocusEngine = {
   pointerMoveFrame: null,
   pendingPointerMoveEvent: null,
   activeKeyDownStartedAt: new Map(),
+
+  // Magic Remote / Mouse jitter threshold & Remote Lock state
+  inputMode: "remote",
+  mouseLockedUntil: 0,
+  lastMouseX: -1,
+  lastMouseY: -1,
+  mouseThresholdPx: 8,
+  remoteLockMs: 450,
+  lastActivationTime: 0,
+  lastActivationTarget: null,
 
   init() {
     this.boundHandleKey = this.handleKey.bind(this);
@@ -72,8 +101,8 @@ export const FocusEngine = {
       window.addEventListener("tizenhwkey", this.boundHandleTizenHardwareKey, true);
     }
     if (Platform.isWebOS()) {
+      // Only attach mousemove on webOS legacy to avoid dual event callbacks
       document.addEventListener("mousemove", this.boundHandlePointerMove, true);
-      document.addEventListener("pointermove", this.boundHandlePointerMove, true);
       document.addEventListener("click", this.boundHandlePointerClick, true);
       document.documentElement?.classList?.add("webos-pointer-remote");
       document.body?.classList?.add("webos-pointer-remote");
@@ -146,6 +175,10 @@ export const FocusEngine = {
       return;
     }
 
+    // Switch to remote mode and lock pointer focus during D-pad navigation
+    this.inputMode = "remote";
+    this.mouseLockedUntil = Date.now() + this.remoteLockMs;
+
     if (hasActiveModal()) {
       return;
     }
@@ -213,23 +246,7 @@ export const FocusEngine = {
   },
 
   getPointerFocusable(event) {
-    const target = event?.target?.closest?.(".focusable");
-    if (!target || !(target instanceof HTMLElement) || !document.contains(target)) {
-      return null;
-    }
-    if (
-      target.disabled ||
-      target.classList.contains("is-disabled") ||
-      target.classList.contains("disabled") ||
-      target.getAttribute("aria-disabled") === "true"
-    ) {
-      return null;
-    }
-    const rect = target.getBoundingClientRect?.();
-    if (!rect || rect.width <= 0 || rect.height <= 0) {
-      return null;
-    }
-    return target;
+    return getPointerFocusable(event?.target, document.body);
   },
 
   focusPointerTarget(target, event = null) {
@@ -248,6 +265,10 @@ export const FocusEngine = {
       return false;
     }
 
+    if (target === this.lastPointerFocusTarget && target.classList.contains("focused")) {
+      return true;
+    }
+
     const focusRoot = screenContainer || document;
     focusRoot.querySelectorAll?.(".focusable.focused")?.forEach((node) => {
       if (node !== target) {
@@ -255,13 +276,22 @@ export const FocusEngine = {
       }
     });
     target.classList.add("focused");
-    try {
-      target.focus({ preventScroll: true });
-    } catch (_) {
+
+    // Only call native .focus() on actual text inputs/controls to prevent unnecessary scroll & style recalculations on webOS 4.9
+    const isInput =
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.getAttribute("contenteditable") === "true";
+    if (isInput) {
       try {
-        target.focus();
-      } catch (_) {}
+        target.focus({ preventScroll: true });
+      } catch (_) {
+        try {
+          target.focus();
+        } catch (_) {}
+      }
     }
+
     currentScreen?.onPointerFocus?.(target, event);
     this.lastPointerFocusTarget = target;
     return true;
@@ -289,9 +319,28 @@ export const FocusEngine = {
   },
 
   processPointerMove(event) {
-    if (!Platform.isWebOS()) {
+    if (!Platform.isWebOS() || !event) {
       return;
     }
+
+    const now = Date.now();
+    if (now < this.mouseLockedUntil) {
+      return;
+    }
+
+    const clientX = Number(event.clientX || 0);
+    const clientY = Number(event.clientY || 0);
+    if (this.lastMouseX >= 0 && this.lastMouseY >= 0) {
+      const dx = Math.abs(clientX - this.lastMouseX);
+      const dy = Math.abs(clientY - this.lastMouseY);
+      if (dx + dy < this.mouseThresholdPx) {
+        return;
+      }
+    }
+    this.lastMouseX = clientX;
+    this.lastMouseY = clientY;
+    this.inputMode = "mouse";
+
     const currentScreen = Router.getCurrentScreen();
     currentScreen?.onPointerMove?.(event);
     const target = this.getPointerFocusable(event);
@@ -312,6 +361,17 @@ export const FocusEngine = {
     if (!target) {
       return;
     }
+
+    // Double-activation prevention within 300ms on the same target
+    const now = Date.now();
+    if (this.lastActivationTarget === target && now - this.lastActivationTime < 300) {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      return;
+    }
+    this.lastActivationTime = now;
+    this.lastActivationTarget = target;
+
     if (hasActiveModal() && !target.closest?.(".nuvio-dialog-backdrop")) {
       return;
     }

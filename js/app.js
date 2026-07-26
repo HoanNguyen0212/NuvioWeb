@@ -147,32 +147,31 @@ function isAddonRemoteMode() {
 }
 
 async function shouldShowProfileSelection() {
-  const [, pinStates] = await Promise.all([
-    ProfileSyncService.pull(),
-    ProfileSyncService.pullProfileLockStates()
-  ]);
   const profiles = await ProfileManager.getProfiles();
   const activeProfileId = ProfileManager.getActiveProfileId();
-  const activeProfileHasPin = Boolean(
-    pinStates?.[String(activeProfileId)] || pinStates?.[Number(activeProfileId)]
-  );
+
+  // Read cached lock states if available
+  const cachedLocks = LocalStore.get("cached_profile_lock_states", null);
 
   if (hasSelectedProfileThisSession) {
-    return { show: false, pinStates };
+    return { show: false, pinStates: cachedLocks };
   }
 
+  const activeProfileHasPin = Boolean(
+    cachedLocks && (cachedLocks[String(activeProfileId)] || cachedLocks[Number(activeProfileId)])
+  );
+
   // Remember last profile: when enabled and the last used profile has no PIN,
-  // skip the picker and go straight in, matching the Android TV app. A profile
-  // with a PIN always shows the picker so the PIN can be entered.
+  // skip the picker and go straight in, matching the Android TV app.
   if (
     ProfileManager.isRememberLastProfileEnabled() &&
     ProfileManager.hasEverSelectedProfile() &&
     !activeProfileHasPin
   ) {
-    return { show: false, pinStates };
+    return { show: false, pinStates: cachedLocks };
   }
 
-  return { show: profiles.length > 1 || activeProfileHasPin, pinStates };
+  return { show: profiles.length > 1 || activeProfileHasPin, pinStates: cachedLocks };
 }
 
 async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
@@ -200,6 +199,15 @@ async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {
   } else {
     await Router.navigate("home");
   }
+
+  // Trigger background profile & lock state sync after UI initial render
+  setTimeout(() => {
+    Promise.all([
+      ProfileSyncService.pull(),
+      ProfileSyncService.pullProfileLockStates()
+    ]).catch(() => {});
+  }, 100);
+
   void Promise.all([
     getStartupSyncService(),
     import(

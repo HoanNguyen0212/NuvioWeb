@@ -174,7 +174,7 @@ export const ProfileSyncService = {
         return {};
       }
       const rows = await SupabaseApi.rpc(PULL_LOCKS_RPC, {}, true);
-      return (Array.isArray(rows) ? rows : []).reduce((accumulator, row) => {
+      const locks = (Array.isArray(rows) ? rows : []).reduce((accumulator, row) => {
         const profileIndex = Number(row?.profile_index ?? row?.profileIndex ?? row?.id ?? 0);
         if (Number.isFinite(profileIndex) && profileIndex > 0) {
           accumulator[String(Math.trunc(profileIndex))] = Boolean(
@@ -183,9 +183,11 @@ export const ProfileSyncService = {
         }
         return accumulator;
       }, {});
+      LocalStore.set("cached_profile_lock_states", locks);
+      return locks;
     } catch (error) {
       console.warn("Profile lock state pull failed", error);
-      return {};
+      return LocalStore.get("cached_profile_lock_states", {}) || {};
     }
   },
 

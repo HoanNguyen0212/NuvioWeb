@@ -546,6 +546,40 @@ async function runBuild() {
 
     console.log("building version files...");
     await syncVersionFiles();
+    try {
+      const parseXml = (source) => {
+        const messages = {};
+        const re = /<string\s+name="([^"]+)">([\s\S]*?)<\/string>/g;
+        let match;
+        while ((match = re.exec(source)) !== null) {
+          let name = match[1];
+          let val = match[2]
+            .replace(/\\'/g, "'")
+            .replace(/\\"/g, '"')
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&amp;/g, "&");
+          messages[name] = val;
+        }
+        return messages;
+      };
+      const enPath = path.resolve(rootDir, "res/values/strings.xml");
+      const viPath = path.resolve(rootDir, "res/values-vi/strings.xml");
+      const enContent = await readFile(enPath, "utf8");
+      const viContent = await readFile(viPath, "utf8");
+      const en = parseXml(enContent);
+      const vi = parseXml(viContent);
+      const bundledContent = `// Auto-generated bundled locale messages for fast startup without XHR
+export const BUNDLED_LOCALES = {
+  en: ${JSON.stringify(en)},
+  vi: ${JSON.stringify(vi)}
+};
+`;
+      await writeFile(path.resolve(rootDir, "js/i18n/bundledLocales.js"), bundledContent, "utf8");
+      console.log("pre-generated bundledLocales.js");
+    } catch (locErr) {
+      console.warn("Failed to pre-generate bundledLocales.js", locErr);
+    }
     await buildCSS();
 
     console.log("copying static assets...");

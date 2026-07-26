@@ -1,4 +1,5 @@
 import { ThemeStore } from "../data/local/themeStore.js";
+import { BUNDLED_LOCALES } from "./bundledLocales.js";
 
 const DEFAULT_LOCALE = "en";
 const SUPPORTED_LOCALES = [
@@ -513,7 +514,11 @@ async function loadXmlFile(relativePath) {
 
 async function loadBaseMessages() {
   if (!baseMessagesPromise) {
-    baseMessagesPromise = loadXmlFile("values/strings.xml");
+    if (BUNDLED_LOCALES.en) {
+      baseMessagesPromise = Promise.resolve({ ...BUNDLED_LOCALES.en });
+    } else {
+      baseMessagesPromise = loadXmlFile("values/strings.xml");
+    }
   }
   return baseMessagesPromise;
 }
@@ -527,6 +532,13 @@ async function loadLocaleMessages(locale) {
     const base = await loadBaseMessages();
     if (locale === DEFAULT_LOCALE) {
       return { ...base };
+    }
+
+    if (BUNDLED_LOCALES[locale]) {
+      return {
+        ...base,
+        ...BUNDLED_LOCALES[locale]
+      };
     }
 
     try {

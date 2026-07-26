@@ -158,30 +158,23 @@ async function shouldShowProfileSelection() {
     return { show: false, pinStates: cachedLocks };
   }
 
-  const activeProfileKey = String(activeProfileId);
-  const activeProfileLockKnown = Boolean(
-    cachedLocks
-    && typeof cachedLocks === "object"
-    && Object.prototype.hasOwnProperty.call(cachedLocks, activeProfileKey)
+  const activeProfileHasPin = Boolean(
+    cachedLocks && (cachedLocks[String(activeProfileId)] || cachedLocks[Number(activeProfileId)])
   );
-  const activeProfileHasPin = activeProfileLockKnown && Boolean(cachedLocks[activeProfileKey]);
 
-  // Remember last profile is safe only when the cached lock state explicitly
-  // says that this profile has no PIN. Unknown/missing state fails closed and
-  // opens profile selection instead of bypassing verification during startup.
+  // Match the established v49 fast path: a remembered profile without a
+  // cached PIN lock opens Home immediately while profile sync stays in the
+  // background. This avoids forcing the profile picker on every TV launch
+  // when the optional lock-state cache has not been populated.
   if (
     ProfileManager.isRememberLastProfileEnabled() &&
     ProfileManager.hasEverSelectedProfile() &&
-    activeProfileLockKnown &&
     !activeProfileHasPin
   ) {
     return { show: false, pinStates: cachedLocks };
   }
 
-  return {
-    show: profiles.length > 1 || activeProfileHasPin || !activeProfileLockKnown,
-    pinStates: cachedLocks
-  };
+  return { show: profiles.length > 1 || activeProfileHasPin, pinStates: cachedLocks };
 }
 
 async function enterWithLastProfile({ restoreWebOsRoute = false } = {}) {

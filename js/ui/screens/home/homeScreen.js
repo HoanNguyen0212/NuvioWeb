@@ -7255,11 +7255,24 @@ export const HomeScreen = {
     this.heroItem = null;
     this.sidebarProfile = await getLocalSidebarProfileState().catch(() => null);
     this.render();
-    await this.loadData({ background: false });
+
+    // Home shell and navigation are local-only. Make them interactive before
+    // catalog/network work so a slow or offline provider cannot hold the boot
+    // welcome overlay on screen.
+    const shellFocusTarget = this.container.querySelector(
+      ".home-sidebar .focusable.selected, .modern-sidebar-panel .focusable.selected, [data-action=\"gotoHome\"].focusable"
+    );
+    if (!this.container.querySelector(".focusable.focused") && shellFocusTarget) {
+      this.setFocusedNode(shellFocusTarget);
+    }
+
+    this.loadData({ background: false }).catch((error) => {
+      console.warn("Initial Home background load failed", error);
+    });
     logHomePerf("mount", {
       ms: Number((homePerfNow() - mountStart).toFixed(2)),
       route: "home",
-      background: false,
+      background: true,
       layoutMode: String(this.layoutMode || "")
     });
   },
@@ -7409,7 +7422,10 @@ export const HomeScreen = {
           return;
         }
         progressiveInitialRows.set(row.homeCatalogKey, row);
-        if (row.items && row.items.length > 0) {
+        const rowItems = Array.isArray(row.result?.data?.items)
+          ? row.result.data.items
+          : [];
+        if (rowItems.length > 0) {
           globalThis.__NUVIO_BOOT_METRICS__?.mark?.("home-network-row");
           PersistentHomeCache.set(
             currentProfileId,
@@ -7417,8 +7433,8 @@ export const HomeScreen = {
             row.type,
             row.catalogId,
             currentLang,
-            row.items,
-            row.nextPage
+            rowItems,
+            row.result?.data?.nextPage || null
           );
         }
         this.rows = this.sortAndFilterRows(Array.from(progressiveInitialRows.values()), this.collections);
@@ -8147,6 +8163,14 @@ export const HomeScreen = {
         this.scheduleFocusedPosterFlow(current);
       }
       this.isRestoringFocusFromBack = false;
+    }
+    if (!this.container?.querySelector(".focusable.focused")) {
+      const shellFocusTarget = this.container?.querySelector(
+        ".home-sidebar .focusable.selected, .modern-sidebar-panel .focusable.selected, [data-action=\"gotoHome\"].focusable"
+      );
+      if (shellFocusTarget) {
+        this.setFocusedNode(shellFocusTarget);
+      }
     }
     if (!this.container?.querySelector(".home-poster-card.focused")) {
       this.clearFocusedPosterFlowState();

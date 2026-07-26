@@ -5,6 +5,8 @@ import { AddonApi } from "../remote/api/addonApi.js";
 
 const ADDON_URLS_KEY = "installedAddonUrls";
 const ADDON_DISPLAY_NAMES_KEY = "installedAddonDisplayNames";
+const ADDON_MANIFEST_CACHE_KEY = "installedAddonManifestCacheV1";
+const ADDON_MANIFEST_CACHE_LIMIT = 60;
 const PROFILES_KEY = "profiles";
 const PROFILE_SCOPED_VERSION = 1;
 const MANIFEST_SUFFIX = "/manifest.json";
@@ -20,6 +22,30 @@ class AddonRepository {
     this.installedAddonsPromise = null;
     this.installedAddonsPromiseKey = "";
     this.changeListeners = new Set();
+    this.hydrateManifestCache();
+  }
+
+  hydrateManifestCache() {
+    const cached = LocalStore.get(ADDON_MANIFEST_CACHE_KEY, null);
+    if (!cached || typeof cached !== "object" || Array.isArray(cached)) {
+      return;
+    }
+    Object.entries(cached).slice(0, ADDON_MANIFEST_CACHE_LIMIT).forEach(([url, addon]) => {
+      const cleanUrl = this.canonicalizeUrl(url);
+      if (cleanUrl && addon && typeof addon === "object") {
+        this.manifestCache.set(cleanUrl, addon);
+      }
+    });
+  }
+
+  persistManifestCache() {
+    const entries = Array.from(this.manifestCache.entries())
+      .slice(-ADDON_MANIFEST_CACHE_LIMIT);
+    const serialized = entries.reduce((result, [url, addon]) => {
+      result[url] = addon;
+      return result;
+    }, {});
+    LocalStore.set(ADDON_MANIFEST_CACHE_KEY, serialized);
   }
 
   canonicalizeUrl(url) {
@@ -268,6 +294,7 @@ class AddonRepository {
       if (result.status === "success") {
         const addon = this.mapManifest(result.data, cleanBaseUrl);
         this.manifestCache.set(cleanBaseUrl, addon);
+        this.persistManifestCache();
         this.manifestErrorCache.delete(cleanBaseUrl);
         return { status: "success", data: this.withDisplayNameOverride(addon) };
       }
@@ -280,6 +307,7 @@ class AddonRepository {
       const fallback = this.getBuiltinFallbackManifest(cleanBaseUrl);
       if (fallback) {
         this.manifestCache.set(cleanBaseUrl, fallback);
+        this.persistManifestCache();
         this.manifestErrorCache.delete(cleanBaseUrl);
         return { status: "success", data: this.withDisplayNameOverride(fallback) };
       }

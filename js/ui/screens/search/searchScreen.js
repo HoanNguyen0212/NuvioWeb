@@ -31,14 +31,35 @@ import {
   renderTitleWatchedBadge
 } from "../../components/watchedTitleBadge.js";
 
-const POSTER_HOLD_DELAY_MS = 650;
-const SEARCH_RESULTS_PER_ROW_DEFAULT = 18;
-const SEARCH_RESULTS_PER_ROW_CONSTRAINED = 12;
-const SEARCH_DISCOVER_RESULTS_PER_ROW_DEFAULT = 14;
-const SEARCH_DISCOVER_RESULTS_PER_ROW_CONSTRAINED = 10;
-const SEARCH_CATALOG_BATCH_SIZE_CONSTRAINED = 3;
-const SEARCH_CATALOG_TIMEOUT_MS_DEFAULT = 3500;
-const SEARCH_CATALOG_TIMEOUT_MS_CONSTRAINED = 6500;
+const SEARCH_MIN_QUERY_LENGTH = 3;
+const SEARCH_DEBOUNCE_MS = 400;
+const SEARCH_CONCURRENCY_LIMIT = 2;
+const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
+const SEARCH_CACHE_MAX_ENTRIES = 50;
+
+const searchResultCache = new Map();
+
+function getSearchCacheKey(query, addonId, type, catalogId) {
+  return `${String(query).toLowerCase().trim()}_${addonId}_${type}_${catalogId}`;
+}
+
+function getSearchCache(key) {
+  const entry = searchResultCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > SEARCH_CACHE_TTL_MS) {
+    searchResultCache.delete(key);
+    return null;
+  }
+  return entry.items;
+}
+
+function setSearchCache(key, items) {
+  if (searchResultCache.size >= SEARCH_CACHE_MAX_ENTRIES) {
+    const firstKey = searchResultCache.keys().next().value;
+    if (firstKey) searchResultCache.delete(firstKey);
+  }
+  searchResultCache.set(key, { timestamp: Date.now(), items });
+}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -540,7 +561,7 @@ export const SearchScreen = {
 
   async reloadRows() {
     const token = this.loadToken;
-    if (this.mode === "search" && this.query.length >= 2) {
+    if (this.mode === "search" && this.query.length >= SEARCH_MIN_QUERY_LENGTH) {
       this.rows = await this.searchRows(this.query, { token });
     } else if (this.mode === "discover") {
       this.rows = await this.loadDiscoverRows();
@@ -681,10 +702,16 @@ export const SearchScreen = {
   async searchRows(query, { token = this.loadToken } = {}) {
     const addons = await addonRepository.getInstalledAddons();
     const searchableCatalogs = buildSearchTargets(addons);
-    const batchSize = getSearchCatalogBatchSize();
     const itemLimit = getSearchResultsPerRow();
     const responses = [];
+
     const runCatalogSearch = async (catalog) => {
+      const cacheKey = getSearchCacheKey(query, catalog.addonId, catalog.type, catalog.catalogId);
+      const cached = getSearchCache(cacheKey);
+      if (cached) {
+        return { catalog, result: { status: "success", data: { items: cached } } };
+      }
+
       try {
         const result = await withTimeout(
           catalogRepository.getCatalog({
@@ -701,6 +728,9 @@ export const SearchScreen = {
           getSearchCatalogTimeoutMs(),
           { status: "error", message: "timeout" }
         );
+        if (result?.status === "success" && Array.isArray(result?.data?.items)) {
+          setSearchCache(cacheKey, result.data.items);
+        }
         return { catalog, result };
       } catch (err) {
         console.warn(`fail on search catalog ${catalog.catalogName}:`, err);
@@ -711,19 +741,14 @@ export const SearchScreen = {
       }
     };
 
-    if (batchSize > 0 && searchableCatalogs.length > batchSize) {
-      for (let index = 0; index < searchableCatalogs.length; index += batchSize) {
-        if (token !== this.loadToken) {
-          break;
-        }
-        const batch = searchableCatalogs.slice(index, index + batchSize);
-        responses.push(...(await Promise.all(batch.map(runCatalogSearch))));
-        if (index + batchSize < searchableCatalogs.length) {
-          await new Promise((resolve) => setTimeout(resolve, 0));
-        }
+    // Concurrency limit = 2 for legacy webOS TV
+    const concurrency = SEARCH_CONCURRENCY_LIMIT;
+    for (let index = 0; index < searchableCatalogs.length; index += concurrency) {
+      if (token !== this.loadToken) {
+        break;
       }
-    } else {
-      responses.push(...(await Promise.all(searchableCatalogs.map(runCatalogSearch))));
+      const chunk = searchableCatalogs.slice(index, index + concurrency);
+      responses.push(...(await Promise.all(chunk.map(runCatalogSearch))));
     }
 
     return responses

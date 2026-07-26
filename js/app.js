@@ -1,4 +1,5 @@
 import "./runtime/polyfills.js";
+import "./core/diagnostics/bootMetrics.js";
 import "./core/diagnostics/consoleDebugBuffer.js";
 import { Router } from "./ui/navigation/router.js";
 import { FocusEngine } from "./ui/navigation/focusEngine.js";
@@ -368,17 +369,22 @@ function setupWebOsAppLifecycle() {
 }
 
 async function bootstrapApp() {
+  if (globalThis.__NUVIO_BOOT_METRICS__) globalThis.__NUVIO_BOOT_METRICS__.mark("bundle-ready");
   markBootStage("Rendering application shell");
   renderAppShell();
   appShellRendered = true;
+  if (globalThis.__NUVIO_BOOT_METRICS__) globalThis.__NUVIO_BOOT_METRICS__.mark("home-shell-rendered");
   markBootStage("Initializing TV platform");
   Platform.init();
+  if (globalThis.__NUVIO_BOOT_METRICS__) globalThis.__NUVIO_BOOT_METRICS__.mark("platform-ready");
   applyPerformanceMode();
   markBootStage("Loading language resources");
   await I18n.init();
+  if (globalThis.__NUVIO_BOOT_METRICS__) globalThis.__NUVIO_BOOT_METRICS__.mark("i18n-local-ready");
 
   markBootStage("Initializing navigation");
   Router.init();
+  if (globalThis.__NUVIO_BOOT_METRICS__) globalThis.__NUVIO_BOOT_METRICS__.mark("router-ready");
 
   FocusEngine.init();
   setupWebOsAppLifecycle();

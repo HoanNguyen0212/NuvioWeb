@@ -40,28 +40,85 @@ html.nuvio-legacy-low-power *::before,
 html.nuvio-legacy-low-power *::after {
   animation-duration: 0.001ms !important;
   animation-delay: 0ms !important;
-  transition-duration: 0.06s !important;
-  transition-delay: 0ms !important;
   scroll-behavior: auto !important;
 }
-/* The broad rule above gives every element a 60ms transition because the
-   default transition-property is `all`. On Home that delays every focus move
-   and repaints many descendants. Make Home navigation fully immediate. */
+
+/* Never shorten an inherited `transition: all`; define a small component
+   profile with paint-only properties instead. */
+html.nuvio-legacy-low-power .focusable,
+html.nuvio-legacy-low-power button,
+html.nuvio-legacy-low-power .menu-item,
+html.nuvio-legacy-low-power .sidebar-item,
+html.nuvio-legacy-low-power .player-control-btn,
+html.nuvio-legacy-low-power .player-dialog-item {
+  transition-property: background-color, border-color, color, opacity !important;
+  transition-duration: 60ms !important;
+  transition-delay: 0ms !important;
+  transition-timing-function: linear !important;
+}
+
+html.nuvio-legacy-low-power .search-screen-shell,
+html.nuvio-legacy-low-power .library-shell,
+html.nuvio-legacy-low-power .addons-shell,
+html.nuvio-legacy-low-power .settings-shell {
+  transition-property: opacity !important;
+  transition-duration: 100ms !important;
+  transition-delay: 0ms !important;
+  transition-timing-function: linear !important;
+}
+
+html.nuvio-legacy-low-power .search-screen-shell.search-route-enter,
+html.nuvio-legacy-low-power .library-shell.library-route-enter,
+html.nuvio-legacy-low-power .addons-shell.addons-route-enter,
+html.nuvio-legacy-low-power .settings-shell.settings-route-enter {
+  animation-name: searchRouteEnter !important;
+  animation-duration: 100ms !important;
+  animation-delay: 0ms !important;
+  animation-timing-function: linear !important;
+  animation-fill-mode: both !important;
+}
+
+html.nuvio-legacy-low-power .player-controls-overlay,
+html.nuvio-legacy-low-power .player-modal,
+html.nuvio-legacy-low-power .player-modal-backdrop,
+html.nuvio-legacy-low-power .player-pause-overlay {
+  transition-property: opacity !important;
+  transition-duration: 120ms !important;
+  transition-delay: 0ms !important;
+  transition-timing-function: linear !important;
+}
+
+html.nuvio-legacy-low-power .player-progress-track {
+  transition: none !important;
+}
+
+/* Home navigation remains immediate because even paint-only transitions are
+   unnecessary while moving quickly across rows. */
 html.nuvio-legacy-low-power .home-screen-shell,
-html.nuvio-legacy-low-power .home-screen-shell *,
-html.nuvio-legacy-low-power .home-screen-shell *::before,
-html.nuvio-legacy-low-power .home-screen-shell *::after {
+html.nuvio-legacy-low-power .home-screen-shell [class^="home-"],
+html.nuvio-legacy-low-power .home-screen-shell [class*=" home-"] {
   animation: none !important;
   transition: none !important;
-  transition-duration: 0s !important;
-  transition-delay: 0s !important;
   scroll-behavior: auto !important;
 }
 
 html.nuvio-legacy-low-power [style*="backdrop-filter"],
 html.nuvio-legacy-low-power .backdrop-blur,
 html.nuvio-legacy-low-power .blur,
-html.nuvio-legacy-low-power .glass {
+html.nuvio-legacy-low-power .glass,
+html.nuvio-legacy-low-power .player-pause-overlay-shade,
+html.nuvio-legacy-low-power .modern-sidebar-panel,
+html.nuvio-legacy-low-power .modern-sidebar-pill-chip,
+html.nuvio-legacy-low-power .series-episode-card,
+html.nuvio-legacy-low-power .series-stream-panel,
+html.nuvio-legacy-low-power .stream-route-panel-shell {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html.nuvio-legacy-low-power.performance-constrained.modern-sidebar-blur-capable
+  .modern-sidebar-shell.blur-enabled.expanded:not(.collapsing)
+  .modern-sidebar-panel {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
@@ -455,7 +512,8 @@ html.no-flex-gap.nuvio-legacy-low-power .settings-theme-row > * + * {
 
 /* Settings should react immediately to the remote on the low-power TV. */
 html.nuvio-legacy-low-power .settings-shell,
-html.nuvio-legacy-low-power .settings-shell * {
+html.nuvio-legacy-low-power .settings-shell [class^="settings-"],
+html.nuvio-legacy-low-power .settings-shell [class*=" settings-"] {
   animation: none !important;
   transition: none !important;
   scroll-behavior: auto !important;

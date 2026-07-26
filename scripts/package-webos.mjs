@@ -64,6 +64,39 @@ function buildWebOsIndexHtml({ webOsScriptPath = "" } = {}) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <title>${appName}</title>
+  <style>
+    #boot-welcome {
+      position: fixed;
+      z-index: 2147483646;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #0f1115;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+    }
+    #boot-welcome img {
+      width: 220px;
+      max-width: 40vw;
+      height: auto;
+      margin-bottom: 24px;
+    }
+    #boot-welcome .boot-spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(255, 255, 255, 0.15);
+      border-top-color: #e50914;
+      border-radius: 50%;
+      animation: boot-spin 0.8s linear infinite;
+    }
+    @keyframes boot-spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
   <script src="assets/runtime/legacy-features.js"></script>
   <script src="nuvio-legacy-polyfills.js"></script>
   <script src="nuvio-legacy-fast-home.js"></script>
@@ -74,10 +107,13 @@ function buildWebOsIndexHtml({ webOsScriptPath = "" } = {}) {
   <link rel="stylesheet" href="css/nuvio-legacy-performance.css" />
 </head>
 <body>
+  <div id="boot-welcome">
+    <img src="assets/brand/app_logo_wordmark.png" alt="Nuvio" />
+    <div class="boot-spinner"></div>
+  </div>
   <script src="boot-guard.js"></script>
   <script>window.__NUVIO_PLATFORM__ = "webos";</script>
   <script src="nuvio.env.js"></script>
-  <script src="assets/libs/qrcode-generator.js"></script>
 ${webOsScriptTag}  <script>
     window.NuvioBootGuard.runCompatibilityGate(${compatibilityOptions}, function startNuvioApp() {
       window.NuvioBootGuard.loadScript("app.bundle.js");
@@ -165,13 +201,15 @@ async function packageWebOs() {
 
   console.log("creating webOS IPK...");
   try {
+    const env = { ...process.env };
+    delete env.NODE_OPTIONS;
     await runWebOsToolsBinary("ares-package", [
       "--no-minify",
       appStageDir,
       serviceStageDir,
       "--outdir",
       rootDir
-    ]);
+    ], { env });
   } catch (error) {
     const { version } = await readAppMetadata();
     const expectedIpk = path.join(rootDir, `space.nuvio.webos_${version}_all.ipk`);

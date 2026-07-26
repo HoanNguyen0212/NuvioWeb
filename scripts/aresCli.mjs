@@ -55,7 +55,8 @@ export function runCommand(
 export function runWebOsToolsBinary(binaryName, args, { cwd = rootDir, stdio = "inherit" } = {}) {
   return new Promise((resolve, reject) => {
     const executablePath = resolveWebOsToolsBinary(binaryName);
-    const child = spawn(process.execPath, ["--require", compatPath, executablePath, ...args], {
+    const execPath = process.env.REAL_NODE || "/data/data/com.termux/files/usr/bin/node";
+    const child = spawn(execPath, ["--require", compatPath, executablePath, ...args], {
       cwd,
       stdio
     });

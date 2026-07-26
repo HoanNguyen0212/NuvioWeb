@@ -51,6 +51,15 @@ function getBackInputChannel(event) {
     : "keydown";
 }
 
+function recordFocusMetric(name) {
+  if (!globalThis?.__NUVIO_DEBUG_LEGACY_METRICS__) {
+    return;
+  }
+  const root = globalThis.__NUVIO_LEGACY_METRICS__ || (globalThis.__NUVIO_LEGACY_METRICS__ = {});
+  const focus = root.focus || (root.focus = {});
+  focus[name] = Number(focus[name] || 0) + 1;
+}
+
 function getPointerFocusable(node, root) {
   var curr = node;
   while (curr && curr !== root && curr !== document.body) {
@@ -71,8 +80,10 @@ function getPointerFocusable(node, root) {
 }
 
 export const FocusEngine = {
+  initialized: false,
   lastBackHandledAt: 0,
   lastBackHandledChannel: "",
+  currentFocusedElement: null,
   lastPointerFocusTarget: null,
   pointerMoveFrame: null,
   pendingPointerMoveEvent: null,
@@ -89,6 +100,10 @@ export const FocusEngine = {
   lastActivationTarget: null,
 
   init() {
+    if (this.initialized) {
+      return;
+    }
+    this.initialized = true;
     this.boundHandleKey = this.handleKey.bind(this);
     this.boundHandleKeyUp = this.handleKeyUp.bind(this);
     this.boundHandleTizenHardwareKey = this.handleTizenHardwareKey.bind(this);
@@ -101,12 +116,48 @@ export const FocusEngine = {
       window.addEventListener("tizenhwkey", this.boundHandleTizenHardwareKey, true);
     }
     if (Platform.isWebOS()) {
-      // Only attach mousemove on webOS legacy to avoid dual event callbacks
+      // Only attach mousemove on webOS legacy to avoid dual event callbacks.
       document.addEventListener("mousemove", this.boundHandlePointerMove, true);
       document.addEventListener("click", this.boundHandlePointerClick, true);
       document.documentElement?.classList?.add("webos-pointer-remote");
       document.body?.classList?.add("webos-pointer-remote");
     }
+  },
+
+  destroy() {
+    if (!this.initialized) {
+      return;
+    }
+    document.removeEventListener("keydown", this.boundHandleKey, true);
+    document.removeEventListener("keyup", this.boundHandleKeyUp, true);
+    if (Platform.isTizen()) {
+      document.removeEventListener("tizenhwkey", this.boundHandleTizenHardwareKey, true);
+      window.removeEventListener("tizenhwkey", this.boundHandleTizenHardwareKey, true);
+    }
+    if (Platform.isWebOS()) {
+      document.removeEventListener("mousemove", this.boundHandlePointerMove, true);
+      document.removeEventListener("click", this.boundHandlePointerClick, true);
+      document.documentElement?.classList?.remove("webos-pointer-remote");
+      document.body?.classList?.remove("webos-pointer-remote");
+    }
+    if (this.pointerMoveFrame != null) {
+      if (typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(this.pointerMoveFrame);
+      }
+      clearTimeout(this.pointerMoveFrame);
+    }
+    this.pointerMoveFrame = null;
+    this.pendingPointerMoveEvent = null;
+    this.currentFocusedElement = null;
+    this.lastPointerFocusTarget = null;
+    this.lastActivationTarget = null;
+    this.activeKeyDownStartedAt.clear();
+    this.boundHandleKey = null;
+    this.boundHandleKeyUp = null;
+    this.boundHandleTizenHardwareKey = null;
+    this.boundHandlePointerMove = null;
+    this.boundHandlePointerClick = null;
+    this.initialized = false;
   },
 
   handleTizenHardwareKey(event) {
@@ -265,25 +316,37 @@ export const FocusEngine = {
       return false;
     }
 
-    if (target === this.lastPointerFocusTarget && target.classList.contains("focused")) {
+    if (target === this.currentFocusedElement && target.classList.contains("focused")) {
       return true;
     }
 
     const focusRoot = screenContainer || document;
-    focusRoot.querySelectorAll?.(".focusable.focused")?.forEach((node) => {
-      if (node !== target) {
-        node.classList.remove("focused");
-      }
-    });
+    let previous = this.currentFocusedElement;
+    if (
+      !previous
+      || !document.contains(previous)
+      || !previous.classList.contains("focused")
+      || (screenContainer && !screenContainer.contains(previous))
+    ) {
+      recordFocusMetric("focusReconcileScans");
+      previous = focusRoot.querySelector?.(".focusable.focused") || null;
+    }
+    if (previous && previous !== target) {
+      previous.classList.remove("focused");
+    }
     target.classList.add("focused");
+    this.currentFocusedElement = target;
+    recordFocusMetric("focusChanges");
 
-    // Only call native .focus() on actual text inputs/controls to prevent unnecessary scroll & style recalculations on webOS 4.9
-    const isInput =
+    // Native focus is reserved for text/select controls and explicit opt-ins.
+    const usesNativeFocus =
       target.tagName === "INPUT" ||
       target.tagName === "TEXTAREA" ||
-      target.tagName === "BUTTON" ||
-      target.getAttribute("contenteditable") === "true";
-    if (isInput) {
+      target.tagName === "SELECT" ||
+      target.getAttribute("contenteditable") === "true" ||
+      target.getAttribute("data-native-focus") === "true";
+    if (usesNativeFocus) {
+      recordFocusMetric("nativeFocusCalls");
       try {
         target.focus({ preventScroll: true });
       } catch (_) {
@@ -302,6 +365,7 @@ export const FocusEngine = {
     if (!Platform.isWebOS()) {
       return;
     }
+    recordFocusMetric("mousemoveReceived");
     this.pendingPointerMoveEvent = event;
     if (this.pointerMoveFrame) {
       return;
@@ -326,6 +390,7 @@ export const FocusEngine = {
 
     const now = Date.now();
     if (now < this.mouseLockedUntil) {
+      recordFocusMetric("mousemoveIgnoredRemoteLock");
       return;
     }
 
@@ -335,6 +400,7 @@ export const FocusEngine = {
       const dx = Math.abs(clientX - this.lastMouseX);
       const dy = Math.abs(clientY - this.lastMouseY);
       if (dx + dy < this.mouseThresholdPx) {
+        recordFocusMetric("mousemoveIgnoredThreshold");
         return;
       }
     }
@@ -366,10 +432,12 @@ export const FocusEngine = {
     // Double-activation prevention within 300ms on the same target
     const now = Date.now();
     if (this.lastActivationTarget === target && now - this.lastActivationTime < 300) {
+      recordFocusMetric("duplicateActivationsBlocked");
       event?.preventDefault?.();
       event?.stopPropagation?.();
       return;
     }
+    recordFocusMetric("activations");
     this.lastActivationTime = now;
     this.lastActivationTarget = target;
     this.inputMode = "mouse";

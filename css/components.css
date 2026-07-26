@@ -11488,6 +11488,20 @@ html.legacy-webos .debug-console-log-frame {
   padding: 0;
   outline: none;
   margin-top: 12px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* The shell is the only timeline hit target; visual layers must not intercept it. */
+.player-progress-track,
+.player-progress-buffered,
+.player-progress-fill {
+  pointer-events: none;
+}
+
+.player-controls-overlay.hidden .player-progress-shell,
+.player-controls-overlay.modal-blocked .player-progress-shell {
+  pointer-events: none;
 }
 
 .player-progress-track {
@@ -17138,6 +17152,19 @@ html.legacy-webos .debug-console-log-frame {
 .legacy-webos .player-controls-bottom {
   padding-top: 84px;
   gap: 16px;
+}
+
+/* Keep the visual rail slim but provide a large Magic Remote hit target. */
+.webos-pointer-remote .player-progress-shell {
+  box-sizing: border-box;
+  padding: 14px 0;
+  margin-top: -2px;
+}
+
+.webos-pointer-remote .player-progress-shell.focused .player-progress-track,
+.webos-pointer-remote .player-progress-shell:hover .player-progress-track {
+  height: 12px;
+  background: rgba(255, 255, 255, 0.52);
 }
 
 .legacy-webos .player-title {

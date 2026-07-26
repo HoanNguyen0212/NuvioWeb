@@ -2331,6 +2331,11 @@ export const PlayerScreen = {
     this.autoHideControlsAfterSeek = false;
     this.controlFocusIndex = 0;
     this.controlsHideTimer = null;
+    this.lastPointerControlsActivityAt = 0;
+    this.lastDirectProgressSeekAt = 0;
+    this.lastDirectProgressSeekX = null;
+    this.progressPointerShell = null;
+    this.progressPointerDownHandler = null;
     this.tickTimer = null;
     this.skipIntervalCheckTimer = null;
     this.skipIntervalsRequestToken = Number(this.skipIntervalsRequestToken || 0);
@@ -4519,6 +4524,7 @@ export const PlayerScreen = {
   },
 
   renderPlayerUi() {
+    this.unbindProgressPointerInput();
     this.uiRefs = null;
     this.lastUiTickState = null;
     this.container.querySelector("#playerUiRoot")?.remove();
@@ -4643,6 +4649,7 @@ export const PlayerScreen = {
 
     this.container.appendChild(root);
     this.cachePlayerUiRefs(root);
+    this.bindProgressPointerInput();
     this.syncPlayerOverlayLayoutState();
     this.bindLoadingLogoFallback();
     if (!this.isExternalFrameMode()) {
@@ -16270,6 +16277,30 @@ export const PlayerScreen = {
     }
   },
 
+  getProgressPointerClientX(event, rect) {
+    const candidates = [
+      Number(event?.clientX),
+      Number(event?.pageX) - Number(window.pageXOffset || 0),
+      Number(event?.screenX)
+    ];
+    for (const value of candidates) {
+      if (Number.isFinite(value) && value >= rect.left - 2 && value <= rect.right + 2) {
+        return value;
+      }
+    }
+
+    const eventTarget = event?.target;
+    const targetRect = eventTarget?.getBoundingClientRect?.();
+    const offsetX = Number(event?.offsetX);
+    if (targetRect && Number.isFinite(offsetX)) {
+      const value = targetRect.left + offsetX;
+      if (value >= rect.left - 2 && value <= rect.right + 2) {
+        return value;
+      }
+    }
+    return null;
+  },
+
   seekProgressFromPointer(event, target) {
     const shell = target?.closest?.(".player-progress-shell") || this.uiRefs?.progressShell;
     const rect = shell?.getBoundingClientRect?.();
@@ -16277,13 +16308,76 @@ export const PlayerScreen = {
     if (!rect || rect.width <= 0 || !Number.isFinite(duration) || duration <= 0) {
       return false;
     }
-    const x = Number(event?.clientX ?? rect.left);
+    const x = this.getProgressPointerClientX(event, rect);
+    if (!Number.isFinite(x)) {
+      return false;
+    }
     const ratio = clamp((x - rect.left) / rect.width, 0, 1);
     this.seekPreviewSeconds = null;
     this.seekRepeatCount = 0;
     this.seekPlaybackSeconds(duration * ratio);
     this.resetControlsAutoHide();
     return true;
+  },
+
+  bindProgressPointerInput() {
+    const shell = this.uiRefs?.progressShell;
+    if (!shell) {
+      return;
+    }
+    this.unbindProgressPointerInput();
+    this.progressPointerShell = shell;
+    this.progressPointerDownHandler = (event) => {
+      if (typeof event.button === "number" && event.button !== 0) {
+        return;
+      }
+      const overlay = this.uiRefs?.controlsOverlay;
+      if (
+        !this.controlsVisible
+        || this.isDialogOpen()
+        || overlay?.classList?.contains("hidden")
+        || overlay?.classList?.contains("modal-blocked")
+      ) {
+        return;
+      }
+      const rect = shell.getBoundingClientRect();
+      const pointerX = this.getProgressPointerClientX(event, rect);
+      this.syncPointerFocus(shell);
+      if (!this.seekProgressFromPointer(event, shell)) {
+        return;
+      }
+      this.lastDirectProgressSeekAt = Date.now();
+      this.lastDirectProgressSeekX = pointerX;
+      if (event.preventDefault) {
+        event.preventDefault();
+      }
+    };
+    shell.addEventListener("mousedown", this.progressPointerDownHandler, true);
+  },
+
+  unbindProgressPointerInput() {
+    if (this.progressPointerShell && this.progressPointerDownHandler) {
+      this.progressPointerShell.removeEventListener("mousedown", this.progressPointerDownHandler, true);
+    }
+    this.progressPointerShell = null;
+    this.progressPointerDownHandler = null;
+  },
+
+  onPointerMove() {
+    if (this.isExternalFrameMode() || this.isDialogOpen()) {
+      return;
+    }
+    const now = Date.now();
+    if (!this.controlsVisible) {
+      this.lastPointerControlsActivityAt = now;
+      this.setControlsVisible(true, { focus: false });
+      return;
+    }
+    // Avoid recreating the auto-hide timer for every Magic Remote event.
+    if (now - Number(this.lastPointerControlsActivityAt || 0) >= 250) {
+      this.lastPointerControlsActivityAt = now;
+      this.resetControlsAutoHide();
+    }
   },
 
   onPointerFocus(target) {
@@ -16325,6 +16419,21 @@ export const PlayerScreen = {
     }
 
     if (target.closest?.(".player-progress-shell")) {
+      if (!this.controlsVisible || this.isDialogOpen()) {
+        return true;
+      }
+      const shell = target.closest?.(".player-progress-shell") || this.uiRefs?.progressShell;
+      const rect = shell?.getBoundingClientRect?.();
+      const clickX = rect ? this.getProgressPointerClientX(event, rect) : null;
+      const elapsed = Date.now() - Number(this.lastDirectProgressSeekAt || 0);
+      const recentlyHandled = elapsed >= 0
+        && elapsed < 600
+        && Number.isFinite(clickX)
+        && Number.isFinite(this.lastDirectProgressSeekX)
+        && Math.abs(clickX - this.lastDirectProgressSeekX) < 8;
+      if (recentlyHandled) {
+        return true;
+      }
       return this.seekProgressFromPointer(event, target);
     }
 
@@ -17002,6 +17111,7 @@ export const PlayerScreen = {
     this.nextEpisodeAutoplayAttemptedKey = "";
     this.resetStillWatchingPromptState({ render: false });
     this.consecutiveAutoPlayCount = 0;
+    this.unbindProgressPointerInput();
     this.unbindVideoEvents();
     if (this.endedHandler && PlayerController.video) {
       PlayerController.video.removeEventListener("ended", this.endedHandler);

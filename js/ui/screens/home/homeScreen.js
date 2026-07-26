@@ -7365,7 +7365,7 @@ export const HomeScreen = {
           type: desc.type,
           homeCatalogKey,
           title: formatCatalogRowTitle(desc.catalogName, desc.addonName),
-          items: cached.items,
+          items: cached.items.slice(0, 12),
           nextPage: cached.nextPage,
           loading: false,
           error: null

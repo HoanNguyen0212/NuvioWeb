@@ -90,13 +90,46 @@ class AuthManagerClass {
       return;
     }
 
-    const refreshed = await this.refreshSessionIfNeeded();
-    if (!refreshed) {
+    // Determine initial local auth state immediately without blocking on network
+    if (token && !isJwtExpired(token, 0)) {
+      this.setState(AuthState.AUTHENTICATED);
+    } else {
       this.setState(AuthState.SIGNED_OUT);
-      return;
     }
 
-    this.setState(AuthState.AUTHENTICATED);
+    // Schedule session refresh in background with deadline
+    this.refreshSessionInBackground();
+  }
+
+  refreshSessionInBackground() {
+    const refreshToken = SessionStore.refreshToken;
+    if (!refreshToken) {
+      return;
+    }
+    const timeoutMs = 4000;
+    let timerId = 0;
+    const timeoutPromise = new Promise((resolve) => {
+      timerId = setTimeout(() => {
+        resolve({ timeout: true });
+      }, timeoutMs);
+    });
+
+    Promise.race([this.refreshSessionIfNeeded({ force: false }), timeoutPromise])
+      .then((res) => {
+        if (timerId) clearTimeout(timerId);
+        if (res && res.timeout) {
+          console.warn("Background auth session refresh timed out");
+          return;
+        }
+        if (res === false && this.lastRefreshFailureKind !== "transient") {
+          console.warn("Background auth session refresh failed (token invalid)");
+          this.setState(AuthState.SIGNED_OUT);
+        }
+      })
+      .catch((err) => {
+        if (timerId) clearTimeout(timerId);
+        console.warn("Background auth session refresh error", err);
+      });
   }
 
   getAuthState() {

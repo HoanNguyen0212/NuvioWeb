@@ -5,6 +5,7 @@
     version: "legacy-fast-home-v2",
     postersReduced: 0,
     unusedLayersRemoved: 0,
+    optimizeCalls: 0,
     streamingWarmupDeferred: 0
   };
   window.__NUVIO_LEGACY_FAST_HOME_STATS__ = stats;
@@ -105,14 +106,12 @@
     "}";
   (document.head || document.documentElement).appendChild(style);
 
-  var observer = new MutationObserver(function (mutations) {
-    mutations.forEach(function (mutation) {
-      Array.prototype.forEach.call(mutation.addedNodes || [], optimize);
-    });
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-
-  if (document.body) {
-    optimize(document.body);
-  }
+  /* Home invokes this hook after replacing its own markup. Keeping the work
+     inside the Home renderer avoids a document-wide observer on every route. */
+  window.NuvioLegacyFastHome = {
+    optimize: function (root) {
+      stats.optimizeCalls += 1;
+      optimize(root);
+    }
+  };
 })();

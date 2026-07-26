@@ -45,6 +45,7 @@ export function renderModernHomeLayout({
   formatCatalogRowTitle,
   shouldDeferRowImages,
   watchedTitleIds = null,
+  includeExpandedPosterLayers = true,
   escapeHtml,
   escapeAttribute
 } = {}) {
@@ -78,9 +79,7 @@ export function renderModernHomeLayout({
     const focusedItemLimit = focusedRowKey === rowKey && Number.isFinite(focusedItemIndex)
       ? Math.max(0, Number(focusedItemIndex)) + 1
       : 0;
-    const visibleItems = isCollectionRow
-      ? rowItems
-      : rowItems.slice(0, Math.max(maxItems, focusedItemLimit));
+    const visibleItems = rowItems.slice(0, Math.max(maxItems, focusedItemLimit));
     const rowTitle = isCollectionRow
       ? String(rowData.collectionTitle || rowData.collection?.title || "Collection")
       : formatCatalogRowTitle(rowData.catalogName, rowData.type, showCatalogTypeSuffix);
@@ -98,7 +97,8 @@ export function renderModernHomeLayout({
       expandFocusedPoster && focusedRowKey === rowKey && focusedItemIndex === itemIndex,
       preferLandscapePosters,
       deferRowImages,
-      watchedTitleIds
+      watchedTitleIds,
+      includeExpandedPosterLayers
     )).join("");
 
     sectionsMarkup.push(`

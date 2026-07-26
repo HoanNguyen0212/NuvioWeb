@@ -2050,7 +2050,8 @@ function renderLegacyCatalogRowsMarkup(rows = [], options = {}) {
     focusedItemIndex = -1,
     expandFocusedPoster = false,
     rowItemLimit = HOME_MAX_ITEMS_PER_ROW_DEFAULT,
-    watchedTitleIds = null
+    watchedTitleIds = null,
+    includeExpandedPosterLayers = true
   } = options;
   const catalogSeeAllMap = new Map();
   const sectionsMarkup = [];
@@ -2088,11 +2089,9 @@ function renderLegacyCatalogRowsMarkup(rows = [], options = {}) {
     const maxItems = Math.max(1, Number(rowItemLimit || HOME_MAX_ITEMS_PER_ROW_DEFAULT));
     const hasSeeAll = !isCollectionRow && !isLoading && items.length > maxItems;
     const gridLimit = Math.max(1, hasSeeAll ? maxItems - 1 : maxItems);
-    const visibleItems = isCollectionRow
-      ? rowItems
-      : (layoutMode === "grid"
-        ? rowItems.slice(0, gridLimit)
-        : rowItems.slice(0, maxItems));
+    const visibleItems = layoutMode === "grid"
+      ? rowItems.slice(0, gridLimit)
+      : rowItems.slice(0, maxItems);
     const deferRowImages = shouldDeferHomeRowImages(rowIndex, rowKey, focusedRowKey);
     const cardsMarkup = visibleItems.map((item, itemIndex) => createPosterCardMarkup(
       item,
@@ -2105,7 +2104,8 @@ function renderLegacyCatalogRowsMarkup(rows = [], options = {}) {
       expandFocusedPoster && focusedRowKey === rowKey && focusedItemIndex === itemIndex,
       false,
       deferRowImages,
-      watchedTitleIds
+      watchedTitleIds,
+      includeExpandedPosterLayers
     )).join("");
     const trackMarkup = `
       <div class="${layoutMode === "grid" ? "home-grid-track" : "home-track"}" data-track-row-key="${escapeAttribute(rowKey)}">
@@ -2203,7 +2203,7 @@ function buildLazyImageAttributes(src = "", { defer = false, highPriority = fals
   return `src="${safeSrc}" loading="${loadingMode}" decoding="async"${priority}`;
 }
 
-export function createPosterCardMarkup(item, rowIndex, itemIndex, itemType, rowData = null, showLabels = true, layoutMode = "classic", isExpanded = false, preferLandscapePoster = false, deferImages = false, watchedTitleIds = null) {
+export function createPosterCardMarkup(item, rowIndex, itemIndex, itemType, rowData = null, showLabels = true, layoutMode = "classic", isExpanded = false, preferLandscapePoster = false, deferImages = false, watchedTitleIds = null, includeExpandedPosterLayers = true) {
   const suppressPosterText = Boolean(rowData?.suppressPosterText);
   const rowKey = String(rowData?.homeCatalogKey || buildModernRowKey(rowData || {})).trim();
   const collectionSeed = rowData?.rowKind === "collection"
@@ -2330,17 +2330,19 @@ export function createPosterCardMarkup(item, rowIndex, itemIndex, itemType, rowD
         ${(!isLoading && posterSrc)
       ? `<img class="content-poster" ${buildLazyImageAttributes(posterSrc, { defer: deferImages })} alt="${escapeAttribute(normalized.name || "content")}" />`
       : '<div class="content-poster placeholder"></div>'}
-        ${(!isLoading && expandedVisualSrc)
+        ${includeExpandedPosterLayers ? `
+          ${(!isLoading && expandedVisualSrc)
       ? `<img class="home-poster-expanded-backdrop" data-src="${escapeAttribute(expandedVisualSrc)}" decoding="async" loading="lazy" alt="" aria-hidden="true" />`
       : '<div class="home-poster-expanded-backdrop placeholder" aria-hidden="true"></div>'}
-        <div class="home-poster-trailer-layer"></div>
-        <div class="home-poster-expanded-gradient"></div>
-        ${watchedBadge}
-        <div class="home-poster-expanded-brand">
-          ${(!isLoading && normalized.logo)
+          <div class="home-poster-trailer-layer"></div>
+          <div class="home-poster-expanded-gradient"></div>
+          <div class="home-poster-expanded-brand">
+            ${(!isLoading && normalized.logo)
       ? `<img class="home-poster-expanded-logo" data-src="${escapeAttribute(normalized.logo)}" decoding="async" loading="lazy" alt="${escapeAttribute(normalized.name || "content")}" />`
       : `<div class="home-poster-expanded-title">${escapeHtml(normalized.name || "Untitled")}</div>`}
-        </div>
+          </div>
+        ` : ""}
+        ${watchedBadge}
         ${(!isLoading && useLandscapePoster && !suppressPosterText) ? `
           <div class="home-poster-landscape-copy" aria-hidden="true">
             ${normalized.logo
@@ -7915,6 +7917,10 @@ export const HomeScreen = {
         ? retainedFocusState
         : null);
     const focusedPosterFlowConfig = this.getFocusedPosterFlowConfig(this.layoutPrefs || {});
+    const includeExpandedPosterLayers = Boolean(
+      this.layoutPrefs?.focusedPosterBackdropExpandEnabled === true
+      || this.layoutPrefs?.focusedPosterBackdropTrailerEnabled === true
+    );
     const expandFocusedPoster = this.layoutMode === "modern"
       && Boolean(focusedPosterFlowConfig.shouldExpand)
       && Number(this.layoutPrefs?.focusedPosterBackdropExpandDelaySeconds ?? 3) <= 0
@@ -7965,6 +7971,7 @@ export const HomeScreen = {
         formatCatalogRowTitle,
         shouldDeferRowImages: shouldDeferHomeRowImages,
         watchedTitleIds: this.watchedTitleIds,
+        includeExpandedPosterLayers,
         escapeHtml,
         escapeAttribute
       });
@@ -7987,7 +7994,8 @@ export const HomeScreen = {
         focusedItemIndex: Number.isFinite(focusState?.itemIndex) ? focusState.itemIndex : -1,
         expandFocusedPoster: false,
         rowItemLimit,
-        watchedTitleIds: this.watchedTitleIds
+        watchedTitleIds: this.watchedTitleIds,
+        includeExpandedPosterLayers
       });
       this.catalogSeeAllMap = legacyRowsPayload.catalogSeeAllMap;
       mainContentMarkup = `
@@ -8029,6 +8037,11 @@ export const HomeScreen = {
       </div>
       ${this.renderActiveHoldMenu()}
     `;
+
+    const fastHome = globalThis.NuvioLegacyFastHome;
+    if (fastHome && typeof fastHome.optimize === "function") {
+      fastHome.optimize(this.container.querySelector(".home-screen-shell"));
+    }
 
     if (modernLandscapePostersEnabled) {
       this.applyCachedModernLandscapePosterMetrics(this.container.querySelector(".home-screen-shell.home-modern-landscape-posters"));
@@ -9274,7 +9287,11 @@ export const HomeScreen = {
               false,
               preferLandscape,
               true,
-              this.watchedTitleIds
+              this.watchedTitleIds,
+              Boolean(
+                layoutPrefs.focusedPosterBackdropExpandEnabled === true
+                || layoutPrefs.focusedPosterBackdropTrailerEnabled === true
+              )
             )
           ).join("");
           if (!newMarkup) {

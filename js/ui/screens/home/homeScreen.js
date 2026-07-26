@@ -6,6 +6,7 @@ import { watchProgressRepository } from "../../../data/repository/watchProgressR
 import { watchedItemsRepository } from "../../../data/repository/watchedItemsRepository.js";
 import { savedLibraryRepository } from "../../../data/repository/savedLibraryRepository.js";
 import { libraryRepository, LibrarySourceMode } from "../../../data/repository/libraryRepository.js";
+import { PersistentHomeCache } from "../../../data/local/persistentHomeCache.js";
 import { LayoutPreferences } from "../../../data/local/layoutPreferences.js";
 import { ContinueWatchingPreferences } from "../../../data/local/continueWatchingPreferences.js";
 import { HomeCatalogStore } from "../../../data/local/homeCatalogStore.js";
@@ -7346,6 +7347,44 @@ export const HomeScreen = {
       )
     );
 
+    // 1. Instantly populate rows from PersistentHomeCache before making network calls
+    const currentProfileId = String(ProfileManager.getActiveProfileId() || "1");
+    const currentLang = I18n.getLocale();
+    const cachedRowsMap = new Map();
+
+    catalogDescriptors.forEach((desc) => {
+      const cached = PersistentHomeCache.get(currentProfileId, desc.addonId, desc.type, desc.catalogId, currentLang);
+      if (cached && Array.isArray(cached.items) && cached.items.length > 0) {
+        const homeCatalogKey = buildCatalogOrderKey(desc.addonId, desc.type, desc.catalogId);
+        cachedRowsMap.set(homeCatalogKey, {
+          addonBaseUrl: desc.addonBaseUrl,
+          addonId: desc.addonId,
+          addonName: desc.addonName,
+          catalogId: desc.catalogId,
+          catalogName: desc.catalogName,
+          type: desc.type,
+          homeCatalogKey,
+          title: formatCatalogRowTitle(desc.catalogName, desc.addonName),
+          items: cached.items,
+          nextPage: cached.nextPage,
+          loading: false,
+          error: null
+        });
+      }
+    });
+
+    if (cachedRowsMap.size > 0 && !preserveHomeReturnState) {
+      this.rows = this.sortAndFilterRows(Array.from(cachedRowsMap.values()), this.collections);
+      this.heroCandidates = uniqueById(this.collectHeroCandidates(this.rows));
+      if (!this.heroItem) {
+        this.heroItem = this.pickInitialHero();
+      }
+      this.isInitialHomeLoading = false;
+      this.hasLoadedOnce = true;
+      // Immediately render shell with cached data and place initial focus
+      this.render();
+    }
+
     const initialCatalogLoad = this.getInitialCatalogLoadCount();
     const initialDescriptors = catalogDescriptors.slice(0, initialCatalogLoad);
     const deferredDescriptors = catalogDescriptors.slice(initialCatalogLoad);
@@ -7361,6 +7400,17 @@ export const HomeScreen = {
           return;
         }
         progressiveInitialRows.set(row.homeCatalogKey, row);
+        if (row.items && row.items.length > 0) {
+          PersistentHomeCache.set(
+            currentProfileId,
+            row.addonId,
+            row.type,
+            row.catalogId,
+            currentLang,
+            row.items,
+            row.nextPage
+          );
+        }
         this.rows = this.sortAndFilterRows(Array.from(progressiveInitialRows.values()), this.collections);
         this.heroCandidates = uniqueById(this.collectHeroCandidates(this.rows));
         if (!this.heroItem) {

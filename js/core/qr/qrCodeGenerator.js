@@ -1,26 +1,94 @@
 // js/core/qr/qrCodeGenerator.js
 
+const QR_LIBRARY_PATH = "assets/libs/qrcode-generator.js";
+let qrLibraryPromise = null;
+
+function getQrFactory() {
+  return typeof globalThis.qrcode === "function" ? globalThis.qrcode : null;
+}
+
+function loadQrLibrary() {
+  if (getQrFactory()) {
+    return Promise.resolve(true);
+  }
+  if (qrLibraryPromise) {
+    return qrLibraryPromise;
+  }
+
+  qrLibraryPromise = new Promise((resolve) => {
+    const existing = document.querySelector(`script[src="${QR_LIBRARY_PATH}"]`);
+    const script = existing || document.createElement("script");
+    let settled = false;
+    let timeoutId = null;
+
+    const finish = (loaded) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+      }
+      script.removeEventListener("load", onLoad);
+      script.removeEventListener("error", onError);
+      resolve(Boolean(loaded && getQrFactory()));
+    };
+    const onLoad = () => finish(true);
+    const onError = () => finish(false);
+
+    script.addEventListener("load", onLoad);
+    script.addEventListener("error", onError);
+    timeoutId = setTimeout(() => finish(false), 2000);
+    if (!existing) {
+      script.src = QR_LIBRARY_PATH;
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  });
+
+  return qrLibraryPromise;
+}
+
 export const QrCodeGenerator = {
+  ensureLoaded() {
+    return loadQrLibrary();
+  },
+
   generate(canvas, content, size = 512) {
-    const qr = qrcode(0, "M");
+    const factory = getQrFactory();
+    if (factory) {
+      this.draw(canvas, content, size, factory);
+      return Promise.resolve(true);
+    }
+    return loadQrLibrary().then((loaded) => {
+      const loadedFactory = getQrFactory();
+      if (!loaded || !loadedFactory) {
+        console.warn("QR generator library could not be loaded");
+        return false;
+      }
+      this.draw(canvas, content, size, loadedFactory);
+      return true;
+    });
+  },
+
+  draw(canvas, content, size, factory) {
+    if (!canvas || typeof canvas.getContext !== "function") {
+      return;
+    }
+    const qr = factory(0, "M");
     qr.addData(content);
     qr.make();
 
     const ctx = canvas.getContext("2d");
-
     canvas.width = size;
     canvas.height = size;
-
-    // === 1️⃣ Sfondo bianco arrotondato ===
     const cornerRadius = size * 0.06;
 
     ctx.clearRect(0, 0, size, size);
-
     ctx.fillStyle = "#ffffff";
     this.roundRect(ctx, 0, 0, size, size, cornerRadius);
     ctx.fill();
 
-    // Match Android's ZXing output by preserving a quiet zone around the code.
     const moduleCount = qr.getModuleCount();
     const quietZoneModules = 4;
     const totalModules = moduleCount + quietZoneModules * 2;
@@ -28,29 +96,22 @@ export const QrCodeGenerator = {
     const moduleRadius = moduleSize * 0.08;
 
     ctx.fillStyle = "#000000";
-
-    for (let row = 0; row < moduleCount; row++) {
-      for (let col = 0; col < moduleCount; col++) {
+    for (let row = 0; row < moduleCount; row += 1) {
+      for (let col = 0; col < moduleCount; col += 1) {
         if (qr.isDark(row, col)) {
           const x = (col + quietZoneModules) * moduleSize;
           const y = (row + quietZoneModules) * moduleSize;
-
           this.roundRect(ctx, x, y, moduleSize, moduleSize, moduleRadius);
-
           ctx.fill();
         }
       }
     }
 
-    // === 3️⃣ Clip finale arrotondato ===
     const imageData = ctx.getImageData(0, 0, size, size);
-
     ctx.clearRect(0, 0, size, size);
-
     ctx.save();
     this.roundRect(ctx, 0, 0, size, size, cornerRadius);
     ctx.clip();
-
     ctx.putImageData(imageData, 0, 0);
     ctx.restore();
   },

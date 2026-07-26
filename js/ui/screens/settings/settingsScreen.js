@@ -5617,8 +5617,10 @@ export const SettingsScreen = {
     this.traktStatusMessage = null;
     this.contentFocusKey = "trakt:back";
     await this.render();
+    const qrLibraryReady = QrCodeGenerator.ensureLoaded();
     try {
       await TraktAuthService.startDeviceAuth();
+      await qrLibraryReady;
       this.traktStatusMessage = "Enter code on trakt.tv/activate";
       this.startTraktPolling();
     } catch (error) {

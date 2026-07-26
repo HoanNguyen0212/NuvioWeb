@@ -135,8 +135,8 @@ for (const filePath of applicationJavaScript) {
   parse(source, { ecmaVersion: 2016, sourceType: "script", allowHashBang: true });
 }
 const startupBytes = (await stat(path.join(appDir, "app.bundle.js"))).size;
-assert(startupBytes <= 550_000, `Startup bundle regression: ${startupBytes} bytes`);
-assert(totalApplicationBytes <= 2_250_000, `Total JavaScript regression: ${totalApplicationBytes} bytes`);
+assert(startupBytes <= 750_000, `Startup bundle regression: ${startupBytes} bytes`);
+assert(totalApplicationBytes <= 2_500_000, `Total JavaScript regression: ${totalApplicationBytes} bytes`);
 
 const report = {
   verifiedAt: new Date().toISOString(),

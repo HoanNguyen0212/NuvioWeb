@@ -1,4 +1,4 @@
-import { LocalStore } from "../storage/localStore.js";
+import { LocalStore } from "../../core/storage/localStore.js";
 
 const PERSISTENT_CACHE_PREFIX = "nuvio_home_catalog_cache_v1_";
 const CACHE_SCHEMA_VERSION = 1;

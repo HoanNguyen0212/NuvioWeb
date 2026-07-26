@@ -486,7 +486,8 @@ async function buildBundle() {
           use: {
             loader: "esbuild-loader",
             options: {
-              target: `chrome${compatibilityPolicy.chromiumVersion}`
+              target: `chrome${compatibilityPolicy.chromiumVersion}`,
+              implementation: (await import("esbuild-wasm")).default
             }
           }
         }

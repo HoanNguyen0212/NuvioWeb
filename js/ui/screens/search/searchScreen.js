@@ -31,6 +31,14 @@ import {
   renderTitleWatchedBadge
 } from "../../components/watchedTitleBadge.js";
 
+const POSTER_HOLD_DELAY_MS = 650;
+const SEARCH_RESULTS_PER_ROW_DEFAULT = 18;
+const SEARCH_RESULTS_PER_ROW_CONSTRAINED = 12;
+const SEARCH_DISCOVER_RESULTS_PER_ROW_DEFAULT = 14;
+const SEARCH_DISCOVER_RESULTS_PER_ROW_CONSTRAINED = 10;
+const SEARCH_CATALOG_BATCH_SIZE_CONSTRAINED = 3;
+const SEARCH_CATALOG_TIMEOUT_MS_DEFAULT = 3500;
+const SEARCH_CATALOG_TIMEOUT_MS_CONSTRAINED = 6500;
 const SEARCH_MIN_QUERY_LENGTH = 3;
 const SEARCH_DEBOUNCE_MS = 400;
 const SEARCH_CONCURRENCY_LIMIT = 2;
@@ -384,7 +392,10 @@ export const SearchScreen = {
       ? incomingQuery.length >= 2
         ? "search"
         : "idle"
-      : String(snapshot?.mode || (this.query.length >= 2 ? "search" : "idle"));
+      : String(
+            snapshot?.mode ||
+              (this.query.length >= SEARCH_MIN_QUERY_LENGTH ? "search" : "idle")
+          );
     this.rows = Array.isArray(snapshot?.rows)
       ? snapshot.rows.map((row, index) => ({
           ...row,
@@ -741,41 +752,64 @@ export const SearchScreen = {
       }
     };
 
-    // Concurrency limit = 2 for legacy webOS TV
-    const concurrency = SEARCH_CONCURRENCY_LIMIT;
-    for (let index = 0; index < searchableCatalogs.length; index += concurrency) {
-      if (token !== this.loadToken) {
-        break;
-      }
-      const chunk = searchableCatalogs.slice(index, index + concurrency);
-      responses.push(...(await Promise.all(chunk.map(runCatalogSearch))));
-    }
+    const buildRows = (entries) =>
+      entries
+        .filter(({ result }) => result?.status === "success" && result?.data?.items?.length)
+        .map(({ catalog, result }) => {
+          const items = result?.data?.items || [];
+          return {
+            title: formatCatalogRowTitle(
+              catalog.catalogName,
+              catalog.addonName,
+              catalog.type,
+              this.layoutPrefs?.catalogTypeSuffixEnabled !== false
+            ),
+            subtitle:
+              this.layoutPrefs?.catalogAddonNameEnabled !== false
+                ? `from ${catalog.addonName || "Addon"}`
+                : "",
+            type: catalog.type,
+            addonBaseUrl: catalog.addonBaseUrl,
+            addonId: catalog.addonId,
+            addonName: catalog.addonName,
+            catalogId: catalog.catalogId,
+            catalogName: catalog.catalogName,
+            hasMore: Boolean(items.length > itemLimit || result?.data?.hasMore),
+            items: items.slice(0, itemLimit)
+          };
+        });
 
-    return responses
-      .filter(({ result }) => result?.status === "success" && result?.data?.items?.length)
-      .map(({ catalog, result }) => {
-        const items = result?.data?.items || [];
-        return {
-          title: formatCatalogRowTitle(
-            catalog.catalogName,
-            catalog.addonName,
-            catalog.type,
-            this.layoutPrefs?.catalogTypeSuffixEnabled !== false
-          ),
-          subtitle:
-            this.layoutPrefs?.catalogAddonNameEnabled !== false
-              ? `from ${catalog.addonName || "Addon"}`
-              : "",
-          type: catalog.type,
-          addonBaseUrl: catalog.addonBaseUrl,
-          addonId: catalog.addonId,
-          addonName: catalog.addonName,
-          catalogId: catalog.catalogId,
-          catalogName: catalog.catalogName,
-          hasMore: Boolean(items.length > itemLimit || result?.data?.hasMore),
-          items: items.slice(0, itemLimit)
-        };
-      });
+    // Two workers keep concurrency bounded but publish each provider as soon
+    // as it settles. A fast provider is no longer hidden behind a slow partner
+    // in the same Promise.all batch.
+    let nextTargetIndex = 0;
+    const runWorker = async () => {
+      while (token === this.loadToken && nextTargetIndex < searchableCatalogs.length) {
+        const targetIndex = nextTargetIndex;
+        nextTargetIndex += 1;
+        responses[targetIndex] = await runCatalogSearch(searchableCatalogs[targetIndex]);
+        if (token !== this.loadToken) {
+          return;
+        }
+        const progressiveRows = buildRows(responses.filter(Boolean));
+        if (progressiveRows.length) {
+          this.rows = progressiveRows;
+          if (this.shouldPatchResultsWithoutReplacingInput()) {
+            this.renderResultsOnly();
+          } else {
+            this.requestRender();
+          }
+        }
+      }
+    };
+    const workers = [];
+    const workerCount = Math.min(SEARCH_CONCURRENCY_LIMIT, searchableCatalogs.length);
+    for (let workerIndex = 0; workerIndex < workerCount; workerIndex += 1) {
+      workers.push(runWorker());
+    }
+    await Promise.all(workers);
+
+    return buildRows(responses.filter(Boolean));
   },
 
   renderRows() {
@@ -795,11 +829,11 @@ export const SearchScreen = {
           <h2>${escapeHtml(t("search_start_title", {}, "Start Searching"))}</h2>
           <p>${escapeHtml(
             this.layoutPrefs?.searchDiscoverEnabled
-              ? t("search_start_subtitle", {}, "Enter at least 2 characters")
+              ? t("search_start_subtitle", {}, "Enter at least 3 characters")
               : t(
                   "search_start_subtitle_no_discover",
                   {},
-                  "Discover is disabled. Enter at least 2 characters"
+                  "Discover is disabled. Enter at least 3 characters"
                 )
           )}</p>
         </div>
@@ -1604,7 +1638,8 @@ export const SearchScreen = {
   async runSearchFromInput(input, { autoFocusResults = false } = {}) {
     const nextQuery = trimLeadingWhitespace(input?.value || "").trim();
     this.query = nextQuery;
-    const nextMode = nextQuery.length >= 2 ? "search" : "idle";
+    const nextMode =
+      nextQuery.length >= SEARCH_MIN_QUERY_LENGTH ? "search" : "idle";
     if (nextMode === "idle" && this.mode === "idle" && !(this.rows || []).length) {
       this.lastSubmittedQuery = nextQuery;
       this.captureLiveViewState();
@@ -1637,7 +1672,8 @@ export const SearchScreen = {
       }
     }
     this.query = nextQuery.trim();
-    const delay = this.query.length >= 2 ? 150 : 80;
+    const delay =
+      this.query.length >= SEARCH_MIN_QUERY_LENGTH ? SEARCH_DEBOUNCE_MS : 80;
     this.inputSearchTimer = setTimeout(() => {
       this.inputSearchTimer = null;
       void this.runSearchFromInput(input, { autoFocusResults: false });
@@ -1787,7 +1823,8 @@ export const SearchScreen = {
         return;
       }
       this.query = recognized;
-      this.mode = this.query.length >= 2 ? "search" : "idle";
+      this.mode =
+        this.query.length >= SEARCH_MIN_QUERY_LENGTH ? "search" : "idle";
       this.pendingAutoFocusResults = this.mode === "search";
       this.loadToken = (this.loadToken || 0) + 1;
       this.renderLoading();

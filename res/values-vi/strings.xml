@@ -630,8 +630,8 @@
     <string name="search_keyboard_hint">Nhấn Xong trên bàn phím để tìm kiếm</string>
     <string name="search_placeholder">Tìm phim &amp; chương trình TV</string>
     <string name="search_start_title">Bắt đầu tìm kiếm</string>
-    <string name="search_start_subtitle">Nhập ít nhất 2 ký tự</string>
-    <string name="search_start_subtitle_no_discover">Khám phá đã tắt. Nhập ít nhất 2 ký tự</string>
+    <string name="search_start_subtitle">Nhập ít nhất 3 ký tự</string>
+    <string name="search_start_subtitle_no_discover">Khám phá đã tắt. Nhập ít nhất 3 ký tự</string>
     <string name="search_voice_no_speech">Không nhận được giọng nói. Thử lại.</string>
     <string name="search_voice_mic_permission">Cần quyền micro để tìm kiếm bằng giọng nói.</string>
     <string name="search_voice_failed">Nhận dạng giọng nói thất bại. Thử lại.</string>

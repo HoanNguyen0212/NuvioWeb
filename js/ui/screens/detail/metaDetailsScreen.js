@@ -8801,9 +8801,23 @@ export const MetaDetailsScreen = {
   onPointerFocus() {
   },
 
-  onPointerActivate(target) {
+  async onPointerActivate(target) {
     const actionTarget = target?.closest?.("[data-action]");
     const action = String(actionTarget?.dataset?.action || "");
+    if (action === "playDefault") {
+      await this.playDefaultFromHero();
+      return true;
+    }
+    if (action === "playFromBeginning") {
+      await this.playDefaultFromHero({ startOver: true });
+      return true;
+    }
+    if (action === "goBack") {
+      if (!this.navigateBackFromDetail()) {
+        Router.back();
+      }
+      return true;
+    }
     if (action === "toggleTrailer") {
       this.playTrailer({ muted: false, restart: true, initiatedByUser: true });
       return true;

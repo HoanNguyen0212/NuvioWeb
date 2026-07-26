@@ -281,6 +281,7 @@ export const FocusEngine = {
     const isInput =
       target.tagName === "INPUT" ||
       target.tagName === "TEXTAREA" ||
+      target.tagName === "BUTTON" ||
       target.getAttribute("contenteditable") === "true";
     if (isInput) {
       try {
@@ -371,6 +372,8 @@ export const FocusEngine = {
     }
     this.lastActivationTime = now;
     this.lastActivationTarget = target;
+    this.inputMode = "mouse";
+    this.mouseLockedUntil = 0;
 
     if (hasActiveModal() && !target.closest?.(".nuvio-dialog-backdrop")) {
       return;
@@ -385,6 +388,27 @@ export const FocusEngine = {
     }
     const handled = await currentScreen.onPointerActivate(target, event);
     if (handled) {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      event?.stopImmediatePropagation?.();
+      return;
+    }
+
+    // Some legacy screens implement only special pointer actions and keep the
+    // complete activation path in their Enter handler. Reuse that path after
+    // pointer focus so a Magic Remote click does not require a D-pad nudge.
+    if (target.getAttribute("data-action") && typeof currentScreen?.onKeyDown === "function") {
+      const enterEvent = buildNormalizedEvent({
+        target,
+        key: "Enter",
+        code: "Enter",
+        keyCode: 13,
+        which: 13,
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {}
+      });
+      await currentScreen.onKeyDown(enterEvent);
       event?.preventDefault?.();
       event?.stopPropagation?.();
       event?.stopImmediatePropagation?.();

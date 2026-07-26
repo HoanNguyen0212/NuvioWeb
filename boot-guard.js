@@ -565,6 +565,13 @@
     }
   }
 
+  function dismissBootWelcome() {
+    var welcome = document.getElementById("boot-welcome");
+    if (welcome && welcome.parentNode) {
+      welcome.parentNode.removeChild(welcome);
+    }
+  }
+
   function showError(message, details, code) {
     if (!active || !document.body) {
       return;
@@ -670,6 +677,7 @@
       active = false;
       stopWatchdog();
       removeOverlay();
+      dismissBootWelcome();
     },
 
     runCompatibilityGate: runCompatibilityGate,

@@ -628,7 +628,6 @@ export const SearchScreen = {
   },
 
   renderResultsOnly() {
-    recordSearchMetric("fullResultsRebuilds");
     const content = this.container?.querySelector(".search-content");
     const header = content?.querySelector(".search-header");
     const input = this.container?.querySelector("#searchInput");
@@ -637,19 +636,65 @@ export const SearchScreen = {
       return;
     }
     const selectionSnapshot = getInputSelectionSnapshot(input);
+    const focusedBeforePatch = this.container?.querySelector(".focusable.focused") || null;
+    const wasInputActive = document.activeElement === input;
+    const template = document.createElement("div");
+    template.innerHTML = this.renderRows();
+    const nextNodes = Array.from(template.children);
+    const nextRowKeys = new Set();
+    const existingRowsByKey = new Map();
+    Array.from(content.querySelectorAll(".search-results-row")).forEach((rowNode) => {
+      existingRowsByKey.set(String(rowNode.dataset.rowKey || ""), rowNode);
+    });
 
-    while (header.nextSibling) {
-      header.nextSibling.remove();
-    }
-    content.insertAdjacentHTML("beforeend", this.renderRows());
+    content.querySelectorAll(".search-empty-state").forEach((node) => node.remove());
+    let insertionPoint = header.nextSibling;
+    nextNodes.forEach((nextNode) => {
+      const rowKey = String(nextNode.dataset?.rowKey || "");
+      let node = null;
+      if (rowKey) {
+        nextRowKeys.add(rowKey);
+        const existing = existingRowsByKey.get(rowKey) || null;
+        if (existing && existing.dataset.rowSignature === nextNode.dataset.rowSignature) {
+          node = existing;
+        } else if (existing) {
+          existing.parentNode.replaceChild(nextNode, existing);
+          node = nextNode;
+          recordSearchMetric("providerSectionsReplaced");
+        } else {
+          node = nextNode;
+          recordSearchMetric("providerSectionsAdded");
+        }
+      } else {
+        node = nextNode;
+      }
+      if (node !== insertionPoint) {
+        content.insertBefore(node, insertionPoint);
+      }
+      insertionPoint = node.nextSibling;
+    });
+
+    Array.from(content.querySelectorAll(".search-results-row")).forEach((rowNode) => {
+      if (!nextRowKeys.has(String(rowNode.dataset.rowKey || ""))) {
+        rowNode.remove();
+      }
+    });
+
     ScreenUtils.indexFocusables(this.container);
     this.buildNavigationModel();
     this.bindActionEvents();
     input.value = this.query || "";
-    input.focus?.();
-    this.focusNode(this.container?.querySelector(".focusable.focused") || null, input);
-    restoreInputSelection(input, selectionSnapshot);
+    if (focusedBeforePatch?.isConnected) {
+      this.focusNode(null, focusedBeforePatch);
+    } else if (wasInputActive) {
+      this.focusNode(this.container?.querySelector(".focusable.focused") || null, input);
+    }
+    if (wasInputActive) {
+      input.focus?.();
+      restoreInputSelection(input, selectionSnapshot);
+    }
     this.pendingAutoFocusResults = false;
+    recordSearchMetric("incrementalResultPatches");
   },
 
   async loadDiscoverRows() {
@@ -881,8 +926,11 @@ export const SearchScreen = {
       .map((row, rowIndex) => {
         const rowKey = row.stateKey || buildRowStateKey(row, rowIndex);
         const seeAllLabel = t("action_see_all", {}, "See All");
+        const rowSignature = `${rowKey}:${row.title || ""}:${Boolean(row.hasMore)}:${(row.items || [])
+          .map((item) => String(item?.id || ""))
+          .join("|")}`;
         return `
-      <section class="search-results-row" data-row-key="${escapeHtml(rowKey)}">
+      <section class="search-results-row" data-row-key="${escapeHtml(rowKey)}" data-row-signature="${escapeHtml(rowSignature)}">
         <h3 class="search-results-title">${row.title}</h3>
         ${row.subtitle ? `<div class="search-results-subtitle">${row.subtitle}</div>` : ""}
         <div class="search-results-track">

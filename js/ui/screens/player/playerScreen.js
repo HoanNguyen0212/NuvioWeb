@@ -2129,6 +2129,9 @@ export const PlayerScreen = {
     this.externalTrackNodes = [];
     this.externalSubtitleObjectUrls = [];
     this.htmlSubtitleCues = [];
+    this.htmlSubtitleIndexedCues = null;
+    this.htmlSubtitleCueMaxEndPrefix = [];
+    this.htmlSubtitleNextBoundarySeconds = null;
     this.htmlSubtitleRenderFrame = null;
     this.htmlSubtitleRenderTimer = null;
     this.avPlaySubtitleOverlayTimer = null;
@@ -7624,7 +7627,6 @@ export const PlayerScreen = {
       this.markPlaybackProgress();
       this.attemptPendingPlaybackRestore();
       this.refreshWebOsEmbeddedHtmlSubtitleOverlayIfNeeded();
-      this.renderHtmlSubtitleOverlayAtCurrentTime();
       this.scheduleUiTick("timeupdate");
     };
 
@@ -11245,6 +11247,9 @@ export const PlayerScreen = {
       this.avPlaySubtitleOverlayTimer = null;
     }
     this.htmlSubtitleCues = [];
+    this.htmlSubtitleIndexedCues = null;
+    this.htmlSubtitleCueMaxEndPrefix = [];
+    this.htmlSubtitleNextBoundarySeconds = null;
     this.htmlSubtitleActiveCueKey = "";
     this.htmlSubtitleSelectedId = null;
     this.webOsEmbeddedHtmlSubtitleTrack = null;
@@ -11502,6 +11507,61 @@ export const PlayerScreen = {
     node.setAttribute("aria-hidden", "false");
   },
 
+  findActiveHtmlSubtitleCues(subtitleTime) {
+    const cues = this.htmlSubtitleCues;
+    if (this.htmlSubtitleIndexedCues !== cues) {
+      this.htmlSubtitleIndexedCues = cues;
+      this.htmlSubtitleCueMaxEndPrefix = [];
+      let maxEnd = -Infinity;
+      cues.forEach((cue, index) => {
+        maxEnd = Math.max(maxEnd, Number(cue.end || 0));
+        this.htmlSubtitleCueMaxEndPrefix[index] = maxEnd;
+      });
+    }
+
+    let low = 0;
+    let high = cues.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (Number(cues[middle].start || 0) <= subtitleTime) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+
+    const activeCues = [];
+    let scanned = 0;
+    for (let index = low - 1; index >= 0; index -= 1) {
+      if (Number(this.htmlSubtitleCueMaxEndPrefix[index] || 0) <= subtitleTime) {
+        break;
+      }
+      const cue = cues[index];
+      scanned += 1;
+      if (subtitleTime >= cue.start && subtitleTime < cue.end) {
+        activeCues.push(cue);
+      }
+    }
+    activeCues.reverse();
+
+    let nextBoundary = low < cues.length ? Number(cues[low].start) : Infinity;
+    activeCues.forEach((cue) => {
+      const end = Number(cue.end);
+      if (Number.isFinite(end) && end > subtitleTime) {
+        nextBoundary = Math.min(nextBoundary, end);
+      }
+    });
+    this.htmlSubtitleNextBoundarySeconds = Number.isFinite(nextBoundary) ? nextBoundary : null;
+
+    if (globalThis.__NUVIO_DEBUG_LEGACY_METRICS__) {
+      const root = globalThis.__NUVIO_LEGACY_METRICS__ || (globalThis.__NUVIO_LEGACY_METRICS__ = {});
+      const player = root.player || (root.player = {});
+      player.subtitleLookupCalls = Number(player.subtitleLookupCalls || 0) + 1;
+      player.subtitleCueCandidates = Number(player.subtitleCueCandidates || 0) + scanned;
+    }
+    return activeCues;
+  },
+
   renderHtmlSubtitleOverlayAtCurrentTime() {
     if (!Array.isArray(this.htmlSubtitleCues) || !this.htmlSubtitleCues.length) {
       return false;
@@ -11509,9 +11569,7 @@ export const PlayerScreen = {
     const currentTime = Number(this.getPlaybackCurrentSeconds() || 0);
     const delaySeconds = Number(this.subtitleDelayMs || 0) / 1000;
     const subtitleTime = currentTime - delaySeconds;
-    const activeCues = this.htmlSubtitleCues.filter((cue) => (
-      subtitleTime >= cue.start && subtitleTime < cue.end
-    ));
+    const activeCues = this.findActiveHtmlSubtitleCues(subtitleTime);
     this.renderHtmlSubtitleOverlayCue(activeCues);
     return true;
   },
@@ -11529,7 +11587,13 @@ export const PlayerScreen = {
         this.htmlSubtitleRenderTimer = null;
         return;
       }
-      this.htmlSubtitleRenderTimer = setTimeout(render, 120);
+      const currentTime = Number(this.getPlaybackCurrentSeconds() || 0)
+        - (Number(this.subtitleDelayMs || 0) / 1000);
+      const boundary = Number(this.htmlSubtitleNextBoundarySeconds);
+      const boundaryDelay = Number.isFinite(boundary)
+        ? Math.max(50, Math.min(1000, Math.round((boundary - currentTime) * 1000) + 20))
+        : 500;
+      this.htmlSubtitleRenderTimer = setTimeout(render, boundaryDelay);
     };
     render();
   },

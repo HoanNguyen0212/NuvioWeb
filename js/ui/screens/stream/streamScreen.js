@@ -385,8 +385,14 @@ function isPlayableStreamCandidate(stream) {
   if (/\b(?:hubcloud|gpdl\.hubcloud)\.cx\b/i.test(url)) {
     return false;
   }
-  // Filter out non-direct redirect shorteners that require browser interaction
+  // Filter out non-direct redirect shorteners that require browser interaction.
   if (/\b(?:hub\.pyramid\.surf|hub\.latent\.click|bzzhr\.co)\b/i.test(url)) {
+    return false;
+  }
+  // These HDHub mirrors currently fail HTMLMediaElement metadata probing with
+  // MEDIA_ERR_SRC_NOT_SUPPORTED on LG webOS 4 / Chromium 53. Keep the working
+  // R2 and FSL direct-media mirrors instead of presenting known-dead choices.
+  if (/\b(?:pixeldrain\.dev|img1\.bcxvo\.com)\b/i.test(url)) {
     return false;
   }
   return true;

@@ -66,19 +66,22 @@ export const PluginScreen = {
 
   buildSyncStatusText() {
     if (this.syncing) {
-      return "Syncing addons...";
+      return "Đang tải danh sách addon từ Cloud về TV...";
     }
     if (!this.model?.authenticated) {
-      return "Sign in on your phone to link addons.";
+      return "Hãy đăng nhập tài khoản Nuvio trên TV trước khi đồng bộ.";
     }
     const status = this.model?.syncStatus || {};
     if (status.state === "error") {
-      return "Couldn't reach the addon service. Check the TV internet connection and try Refresh.";
+      return "Không thể đọc addon trên Cloud. Kiểm tra mạng rồi thử lại.";
+    }
+    if (status.state === "ok") {
+      return `Đã đồng bộ ${Number(status.count || 0)} addon từ Cloud về TV.`;
     }
     if (this.model?.addonCount > 0) {
-      return "Addons are up to date.";
+      return `${this.model.addonCount} addon đang có trên TV. Bấm Đồng bộ để tải thay đổi mới nhất từ Cloud.`;
     }
-    return "No addons linked yet. Add them on your phone, then press Refresh.";
+    return "Hãy chỉnh addon trên Cloud, sau đó bấm Đồng bộ addon từ Cloud về TV.";
   },
 
   async refreshAddons() {
@@ -89,6 +92,9 @@ export const PluginScreen = {
     await this.render({ refreshModel: true });
     try {
       await LibrarySyncService.pull();
+      // Warm the newly downloaded manifests before leaving this screen so
+      // Home/Search can use the cloud list immediately on Chromium 53.
+      await addonRepository.getInstalledAddons({ force: true });
     } catch (error) {
       console.warn("Addon refresh failed", error);
     }
@@ -263,8 +269,8 @@ export const PluginScreen = {
                      aria-disabled="${this.syncing ? "true" : "false"}">
                   <span class="addons-large-row-icon material-icons" aria-hidden="true">${this.syncing ? "hourglass_top" : "sync"}</span>
                   <span class="addons-large-row-copy">
-                    <strong>${this.syncing ? "Refreshing..." : "Refresh addons"}</strong>
-                    <small>Re-check your account for addons you enabled on your phone</small>
+                    <strong>${this.syncing ? "Đang đồng bộ..." : "Đồng bộ addon từ Cloud về TV"}</strong>
+                    <small>Thay danh sách addon trên TV bằng danh sách mới nhất trong tài khoản Cloud</small>
                   </span>
                   <span class="addons-large-row-tail-group">
                     <span class="addons-large-row-tail material-icons" aria-hidden="true">refresh</span>

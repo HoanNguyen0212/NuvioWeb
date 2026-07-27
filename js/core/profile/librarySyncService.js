@@ -8,13 +8,14 @@ const TABLE = "tv_addons";
 
 // Records the outcome of the latest pull so the Addons screen can show a
 // visible sync state on TV.
-let lastPullStatus = { state: "idle", count: 0, error: null, at: 0 };
+let lastPullStatus = { state: "idle", count: 0, error: null, source: null, at: 0 };
 
-function recordPullStatus(state, { count = 0, error = null } = {}) {
+function recordPullStatus(state, { count = 0, error = null, source = null } = {}) {
   lastPullStatus = {
     state,
     count: Number(count) || 0,
     error: error ? String(error.message || error) : null,
+    source: source ? String(source) : null,
     at: Date.now()
   };
 }
@@ -86,12 +87,6 @@ async function resolveAddonProfileId() {
   return usesPrimaryAddons ? 1 : profileId;
 }
 
-function extractAddonUrls(rows = []) {
-  return extractAddonEntries(rows)
-    .map((entry) => entry.url)
-    .filter(Boolean);
-}
-
 function extractAddonEntries(rows = []) {
   return (rows || [])
     .map((row) => ({
@@ -126,6 +121,13 @@ function applyPulledAddons(rows = []) {
   return urls;
 }
 
+async function replaceLocalAddons(rows, source) {
+  const urls = applyPulledAddons(rows);
+  await addonRepository.setAddonOrder(urls, { silent: true });
+  recordPullStatus("ok", { count: urls.length, source });
+  return urls;
+}
+
 export const LibrarySyncService = {
   getLastPullStatus() {
     return lastPullStatus;
@@ -141,7 +143,20 @@ export const LibrarySyncService = {
       const localUrls = addonRepository.getInstalledAddonUrls();
       const profileId = await resolveAddonProfileId();
       const ownerId = await AuthManager.getEffectiveUserId();
-      let addonTableMissing = false;
+      // Use the same profile-aware RPC contract as cloud writes first. Reading
+      // a legacy table first can return a valid-but-empty result and hide the
+      // addons that the web manager stored through the current RPC schema.
+      try {
+        const rpcRows = await SupabaseApi.rpc(
+          "sync_pull_addons",
+          { p_profile_id: profileId },
+          true
+        );
+        return await replaceLocalAddons(rpcRows, "cloud-rpc");
+      } catch (rpcError) {
+        readError = rpcError;
+        console.warn("Addon sync pull RPC failed, trying table fallback", rpcError);
+      }
 
       try {
         const addonRows = await SupabaseApi.select(
@@ -149,52 +164,26 @@ export const LibrarySyncService = {
           `user_id=eq.${encodeURIComponent(ownerId)}&profile_id=eq.${profileId}&select=*&order=sort_order.asc`,
           true
         );
-        const addonUrls = applyPulledAddons(addonRows);
-        await addonRepository.setAddonOrder(addonUrls, { silent: true });
-        recordPullStatus("ok", { count: addonUrls.length });
-        return addonUrls;
+        return await replaceLocalAddons(addonRows, "addons-table");
       } catch (addonsTableError) {
-        addonTableMissing = isMissingResourceError(addonsTableError);
-        if (!addonTableMissing) {
+        if (!isMissingResourceError(addonsTableError)) {
           readError = addonsTableError;
         }
         console.warn("Addon sync pull addons-table read failed", addonsTableError);
       }
 
-      let tvTableMissing = false;
       try {
         const rows = await SupabaseApi.select(
           TABLE,
           `owner_id=eq.${encodeURIComponent(ownerId)}&select=*&order=position.asc`,
           true
         );
-        const urls = applyPulledAddons(rows);
-        await addonRepository.setAddonOrder(urls, { silent: true });
-        recordPullStatus("ok", { count: urls.length });
-        return urls;
+        return await replaceLocalAddons(rows, "tv-addons-table");
       } catch (tvTableError) {
-        tvTableMissing = isMissingResourceError(tvTableError);
-        if (!tvTableMissing) {
+        if (!isMissingResourceError(tvTableError)) {
           readError = tvTableError;
         }
         console.warn("Addon sync pull tv-table read failed", tvTableError);
-      }
-
-      if (addonTableMissing && tvTableMissing) {
-        try {
-          const rpcRows = await SupabaseApi.rpc(
-            "sync_pull_addons",
-            { p_profile_id: profileId },
-            true
-          );
-          const urls = applyPulledAddons(rpcRows);
-          await addonRepository.setAddonOrder(urls, { silent: true });
-          recordPullStatus("ok", { count: urls.length });
-          return urls;
-        } catch (rpcError) {
-          readError = rpcError;
-          console.warn("Addon sync pull RPC failed", rpcError);
-        }
       }
 
       if (readError) {

@@ -464,7 +464,8 @@ export const FocusEngine = {
     // Some legacy screens implement only special pointer actions and keep the
     // complete activation path in their Enter handler. Reuse that path after
     // pointer focus so a Magic Remote click does not require a D-pad nudge.
-    if (target.getAttribute("data-action") && typeof currentScreen?.onKeyDown === "function") {
+    if (typeof currentScreen?.onKeyDown === "function") {
+      const routeBeforeActivation = Router.getCurrent();
       const enterEvent = buildNormalizedEvent({
         target,
         key: "Enter",
@@ -476,6 +477,18 @@ export const FocusEngine = {
         stopImmediatePropagation() {}
       });
       await currentScreen.onKeyDown(enterEvent);
+
+      // Poster grids and several legacy screens complete a short Enter press
+      // on keyup so they can distinguish click from hold. A Magic Remote click
+      // must provide that complete press, but only while the keydown has not
+      // already navigated to another route.
+      if (
+        Router.getCurrent() === routeBeforeActivation &&
+        Router.getCurrentScreen() === currentScreen &&
+        typeof currentScreen.onKeyUp === "function"
+      ) {
+        await currentScreen.onKeyUp(enterEvent);
+      }
       event?.preventDefault?.();
       event?.stopPropagation?.();
       event?.stopImmediatePropagation?.();

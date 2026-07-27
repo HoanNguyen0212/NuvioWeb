@@ -661,6 +661,27 @@ export const CatalogSeeAllScreen = {
     });
   },
 
+  onPointerMove(event) {
+    const target = event?.target?.closest?.(".seeall-card.focusable") || null;
+    if (!target || !this.container?.contains(target)) {
+      return false;
+    }
+    if (!target.classList.contains("focused")) {
+      this.focusNode(target);
+    }
+    return true;
+  },
+
+  onPointerActivate(target) {
+    const card = target?.closest?.(".seeall-card.focusable[data-action='openDetail']") || null;
+    if (!card || !this.container?.contains(card)) {
+      return false;
+    }
+    this.cancelPendingPosterHold();
+    this.focusNode(card);
+    return this.openDetailFromNode(card);
+  },
+
   bindShellEvents() {
     const shell = this.container?.querySelector(".seeall-shell") || null;
     if (!shell || shell.__catalogSeeAllShellBound) {

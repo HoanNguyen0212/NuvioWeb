@@ -451,10 +451,9 @@ export const FocusEngine = {
     if (hasActiveModal()) {
       return;
     }
-    if (typeof currentScreen?.onPointerActivate !== "function") {
-      return;
-    }
-    const handled = await currentScreen.onPointerActivate(target, event);
+    const handled = typeof currentScreen?.onPointerActivate === "function"
+      ? await currentScreen.onPointerActivate(target, event)
+      : false;
     if (handled) {
       event?.preventDefault?.();
       event?.stopPropagation?.();

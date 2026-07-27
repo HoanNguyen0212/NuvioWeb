@@ -142,7 +142,6 @@ export const LibrarySyncService = {
       }
       const localUrls = addonRepository.getInstalledAddonUrls();
       const profileId = await resolveAddonProfileId();
-      const ownerId = await AuthManager.getEffectiveUserId();
       // Use the same profile-aware RPC contract as cloud writes first. Reading
       // a legacy table first can return a valid-but-empty result and hide the
       // addons that the web manager stored through the current RPC schema.
@@ -156,6 +155,15 @@ export const LibrarySyncService = {
       } catch (rpcError) {
         readError = rpcError;
         console.warn("Addon sync pull RPC failed, trying table fallback", rpcError);
+      }
+
+      let ownerId;
+      try {
+        ownerId = await AuthManager.getEffectiveUserId();
+      } catch (ownerError) {
+        recordPullStatus("error", { count: localUrls.length, error: ownerError });
+        console.warn("Addon sync owner lookup failed", ownerError);
+        return localUrls;
       }
 
       try {

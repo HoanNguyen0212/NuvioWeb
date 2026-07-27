@@ -451,6 +451,22 @@ export const FocusEngine = {
     if (hasActiveModal()) {
       return;
     }
+
+    // Root sidebar buttons already have the shared navigation handler bound
+    // directly by sidebarNavigation. Invoke it during capture instead of
+    // relying on the screen's cached focus zone, which may still point at the
+    // previous content card after Magic Remote hover.
+    const sidebarTarget = target.closest?.(
+      ".home-sidebar .focusable, .modern-sidebar-panel .focusable"
+    );
+    if (sidebarTarget && typeof sidebarTarget.onclick === "function") {
+      await sidebarTarget.onclick.call(sidebarTarget, event);
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      event?.stopImmediatePropagation?.();
+      return;
+    }
+
     const handled = typeof currentScreen?.onPointerActivate === "function"
       ? await currentScreen.onPointerActivate(target, event)
       : false;

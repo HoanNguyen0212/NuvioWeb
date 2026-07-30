@@ -10209,6 +10209,21 @@ export const PlayerScreen = {
         return;
       }
 
+      if (Environment.isWebOS()) {
+        const stalledPlaybackUrl = this.activePlaybackUrl;
+        const sourceCandidate = this.getStreamCandidateByUrl(stalledPlaybackUrl) || this.getCurrentStreamCandidate();
+        console.warn("Playback stalled on webOS; restarting the current source", {
+          url: stalledPlaybackUrl,
+          engine: PlayerController.playbackEngine
+        });
+        void this.playStreamByUrl(stalledPlaybackUrl, {
+          preservePlaybackState: true,
+          resetSilentAudioState: false,
+          sourceCandidate
+        });
+        return;
+      }
+
       this.loadingVisible = false;
       this.paused = true;
       this.dismissPauseOverlay();

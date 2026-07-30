@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,7 +56,10 @@ export function runCommand(
 export function runWebOsToolsBinary(binaryName, args, { cwd = rootDir, stdio = "inherit" } = {}) {
   return new Promise((resolve, reject) => {
     const executablePath = resolveWebOsToolsBinary(binaryName);
-    const execPath = process.env.REAL_NODE || "/data/data/com.termux/files/usr/bin/node";
+    const termuxNodeWrapper = "/data/data/com.termux/files/usr/bin/node";
+    const execPath =
+      process.env.REAL_NODE ||
+      (existsSync(termuxNodeWrapper) ? termuxNodeWrapper : process.execPath);
     const child = spawn(execPath, ["--require", compatPath, executablePath, ...args], {
       cwd,
       stdio

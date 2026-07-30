@@ -141,7 +141,7 @@ jobs:
           } > /tmp/upstream-issue.md
           ISSUE_NUMBER="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -n 1)"
           if [ -n "$ISSUE_NUMBER" ]; then
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/upstream-issue.md
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/upstream-issue.md
           else
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file /tmp/upstream-issue.md
           fi

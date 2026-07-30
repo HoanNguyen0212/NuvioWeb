@@ -45,6 +45,11 @@ import {
 } from "../../../core/streams/streamBadgeRules.js";
 
 const STREAM_BADGE_LIMIT = 9;
+// Number of rows on each side of the focused source to keep badge-hydrated.
+// Windowing by row index (instead of measuring every card) keeps a single
+// focus move O(1) in layout reads on webOS, where a getBoundingClientRect per
+// card forced a full list reflow every keypress on long source lists.
+const WEBOS_STREAM_BADGE_WINDOW_ROWS = 24;
 const WEBOS_NATIVE_PLAYER_APP_IDS = [
   "com.webos.app.mediadiscovery",
   "com.webos.app.photovideo",
@@ -1548,11 +1553,31 @@ export const StreamScreen = {
   },
 
   getFilteredStreams(filter = this.addonFilter) {
-    const orderedStreams = sortStreamsByAddonOrder(this.streams, this.sourceChips);
-    if (filter === "all") {
-      return DebridStreamPresentation.sortForDisplay(orderedStreams, DebridSettingsStore.get());
+    // Cache the sorted/filtered result so focus navigation (which re-requests
+    // this on every move via badge hydration) does not re-sort and re-parse
+    // the whole source list each keypress. The cache is keyed on the inputs
+    // that affect the result and is cleared in render() when data changes.
+    const cache = this._filteredStreamsCache;
+    if (
+      cache &&
+      cache.streams === this.streams &&
+      cache.chips === this.sourceChips &&
+      cache.filter === filter
+    ) {
+      return cache.result;
     }
-    return orderedStreams.filter((stream) => stream.addonName === filter);
+    const orderedStreams = sortStreamsByAddonOrder(this.streams, this.sourceChips);
+    const result =
+      filter === "all"
+        ? DebridStreamPresentation.sortForDisplay(orderedStreams, DebridSettingsStore.get())
+        : orderedStreams.filter((stream) => stream.addonName === filter);
+    this._filteredStreamsCache = {
+      streams: this.streams,
+      chips: this.sourceChips,
+      filter,
+      result
+    };
+    return result;
   },
 
   hasPendingSourceLoads(filter = this.addonFilter) {
@@ -2226,6 +2251,8 @@ export const StreamScreen = {
 
   render() {
     this.cancelScheduledRender();
+    // Rebuilt markup means the memoised filtered-stream list may be stale.
+    this._filteredStreamsCache = null;
     const { isSeries, title, subtitle, episodeLabel, detailLine } = this.getHeaderMeta();
     const backdrop = this.getBackdropUrl();
     const logo = this.params?.logo || "";
@@ -2342,6 +2369,70 @@ export const StreamScreen = {
         { passive: false }
       );
     }
+  },
+
+  requestStreamBadgeHydration() {
+    if (
+      !Environment.isWebOS() ||
+      Router.getCurrent() !== "stream" ||
+      this.streamBadgeHydrationFrame
+    ) {
+      return;
+    }
+    this.streamBadgeHydrationFrame = requestAnimationFrame(() => {
+      this.streamBadgeHydrationFrame = null;
+      this.hydrateVisibleStreamBadges();
+    });
+  },
+
+  hydrateVisibleStreamBadges() {
+    if (
+      !Environment.isWebOS() ||
+      Router.getCurrent() !== "stream" ||
+      !this.container
+    ) {
+      return;
+    }
+    const list = this.container.querySelector(".stream-route-list");
+    const placeholders = Array.from(
+      this.container.querySelectorAll("[data-lazy-stream-badges]")
+    );
+    if (!list || !placeholders.length) {
+      return;
+    }
+    const filtered = this.getFilteredStreams();
+    const streamBadgesEnabled = DebridSettingsStore.get().streamBadgesEnabled !== false;
+    const badgeSettings = StreamBadgeSettingsStore.snapshot();
+    const focusedRow =
+      this.focusState?.zone === "card" ? Number(this.focusState?.row || 0) : -1;
+
+    // Android's LazyColumn only composes badge images near the viewport. Keep
+    // the complete Web card list for existing remote/pointer navigation, but
+    // apply the same bounded image/DOM lifetime on webOS. Window by row index
+    // around the focus (the focused row is always scrolled into view) instead
+    // of measuring every card: a getBoundingClientRect per card forced a full
+    // list reflow on every focus move, which made long source lists unusable
+    // on webOS.
+    const anchorRow = focusedRow >= 0 ? focusedRow : 0;
+    const windowStart = anchorRow - WEBOS_STREAM_BADGE_WINDOW_ROWS;
+    const windowEnd = anchorRow + WEBOS_STREAM_BADGE_WINDOW_ROWS;
+    placeholders.forEach((placeholder) => {
+      const rowIndex = Number(placeholder.dataset.streamBadgeRow || -1);
+      const shouldHydrate =
+        rowIndex === focusedRow || (rowIndex >= windowStart && rowIndex <= windowEnd);
+      const hydrated = placeholder.dataset.badgesHydrated === "true";
+      if (shouldHydrate && !hydrated) {
+        placeholder.innerHTML = renderStreamBadgeContents(
+          filtered[rowIndex],
+          streamBadgesEnabled,
+          badgeSettings
+        );
+        placeholder.dataset.badgesHydrated = "true";
+      } else if (!shouldHydrate && hydrated) {
+        placeholder.textContent = "";
+        placeholder.dataset.badgesHydrated = "false";
+      }
+    });
   },
 
   bindAddonLogoFallbacks() {

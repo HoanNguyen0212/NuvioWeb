@@ -2256,6 +2256,7 @@ export const PlayerScreen = {
     this.skipIntroSuppressedUntil = 0;
     this.lastActionOverlayBottomPx = null;
     this.subtitleSelectionTimer = null;
+    this.subtitleSelectionToken = 0;
     this.subtitleLoadToken = 0;
     this.subtitleLoading = false;
     this.embeddedSubtitleLoadToken = 0;
@@ -11655,7 +11656,11 @@ export const PlayerScreen = {
     }, hideDelayMs);
   },
 
-  async applyTvHtmlAddonSubtitle(subtitle, subtitleIndex) {
+  async applyTvHtmlAddonSubtitle(subtitle, subtitleIndex, selectionToken = this.subtitleSelectionToken) {
+    const isCurrentSelection = () => Number(selectionToken) === Number(this.subtitleSelectionToken);
+    if (!isCurrentSelection()) {
+      return false;
+    }
     const subtitleId = subtitle?.id || subtitle?.url || `subtitle-${subtitleIndex}`;
     const subtitleUrl = Environment.isTizen()
       ? await this.resolveTizenAvPlaySubtitleUrl(subtitle?.url)
@@ -11668,6 +11673,9 @@ export const PlayerScreen = {
       throw new Error(`HTML subtitle fetch failed with HTTP ${response.status}`);
     }
     const text = await response.text();
+    if (!isCurrentSelection()) {
+      return false;
+    }
     const cues = this.parseSubtitleCues(text);
     if (!cues.length) {
       throw new Error("HTML subtitle fetch returned no cues");
@@ -13365,6 +13373,8 @@ export const PlayerScreen = {
     if (!entry || entry.disabled) {
       return;
     }
+    const selectionToken = Number(this.subtitleSelectionToken || 0) + 1;
+    this.subtitleSelectionToken = selectionToken;
     const previousSubtitleSelectionKey = this.getActiveSubtitleSelectionKey();
 
     const isEmbeddedEntry = Object.prototype.hasOwnProperty.call(entry, "embeddedSubtitleTrackIndex");
@@ -13464,6 +13474,12 @@ export const PlayerScreen = {
     }
 
     if (entry.fallbackAddonSubtitle) {
+      this.clearMountedExternalSubtitleTracks();
+      this.clearHtmlSubtitleOverlay();
+      if (this.subtitleSelectionTimer) {
+        clearTimeout(this.subtitleSelectionTimer);
+        this.subtitleSelectionTimer = null;
+      }
       const subtitle = this.subtitles[entry.subtitleIndex];
       const subtitleId = subtitle?.id || subtitle?.url || `subtitle-${entry.subtitleIndex}`;
       this.selectedAddonSubtitleId = subtitleId;
@@ -13475,7 +13491,7 @@ export const PlayerScreen = {
       this.refreshSubtitleCueStyles();
       this.renderControlButtons();
       this.renderSubtitleDialog();
-      void this.applyFallbackAddonSubtitle(entry.subtitleIndex);
+      void this.applyFallbackAddonSubtitle(entry.subtitleIndex, selectionToken);
       return;
     }
 
@@ -13536,27 +13552,37 @@ export const PlayerScreen = {
     this.renderSubtitleDialog();
   },
 
-  async applyFallbackAddonSubtitle(subtitleIndex) {
+  async applyFallbackAddonSubtitle(subtitleIndex, selectionToken = this.subtitleSelectionToken) {
     const subtitle = this.subtitles[subtitleIndex];
     if (!subtitle?.url) {
       return;
     }
     const subtitleId = subtitle.id || subtitle.url || `subtitle-${subtitleIndex}`;
+    const isCurrentSelection = () => Number(selectionToken) === Number(this.subtitleSelectionToken);
+    if (!isCurrentSelection()) {
+      return;
+    }
 
     const usingAvPlay = typeof PlayerController.isUsingAvPlay === "function"
       ? PlayerController.isUsingAvPlay()
       : false;
     if ((usingAvPlay && Environment.isTizen()) || Environment.isWebOS()) {
       try {
-        if (await this.applyTvHtmlAddonSubtitle(subtitle, subtitleIndex)) {
+        if (await this.applyTvHtmlAddonSubtitle(subtitle, subtitleIndex, selectionToken)) {
           return;
         }
       } catch (error) {
+        if (!isCurrentSelection()) {
+          return;
+        }
         console.warn("HTML subtitle overlay failed", {
           subtitleUrl: subtitle.url,
           error: error?.message || String(error || "")
         });
       }
+    }
+    if (!isCurrentSelection()) {
+      return;
     }
     if (usingAvPlay) {
       let avPlaySubtitleUrl = subtitle.url;
@@ -13566,6 +13592,9 @@ export const PlayerScreen = {
           : await this.resolveSubtitlePlaybackUrl(subtitle.url) || subtitle.url;
       } catch (_) {
         avPlaySubtitleUrl = subtitle.url;
+      }
+      if (!isCurrentSelection()) {
+        return;
       }
       const applied = typeof PlayerController.setAvPlayExternalSubtitle === "function"
         ? PlayerController.setAvPlayExternalSubtitle(avPlaySubtitleUrl)
@@ -13600,7 +13629,7 @@ export const PlayerScreen = {
     this.clearMountedExternalSubtitleTracks();
 
     const resolvedSubtitleUrl = await this.resolveSubtitlePlaybackUrl(subtitle.url);
-    if (!resolvedSubtitleUrl) {
+    if (!isCurrentSelection() || !resolvedSubtitleUrl) {
       return;
     }
 
@@ -13622,7 +13651,12 @@ export const PlayerScreen = {
       // Best effort.
     }
 
-    const activateTrack = () => this.activateMountedExternalSubtitleTrack(track);
+    const activateTrack = () => {
+      if (!isCurrentSelection()) {
+        return false;
+      }
+      return this.activateMountedExternalSubtitleTrack(track);
+    };
     track.addEventListener("load", activateTrack, { once: true });
     track.addEventListener("error", () => {
       console.warn("Subtitle track failed to load", { subtitleUrl: subtitle.url });
@@ -13644,6 +13678,10 @@ export const PlayerScreen = {
     let activationAttempts = 0;
     const scheduleActivation = () => {
       this.subtitleSelectionTimer = setTimeout(() => {
+        if (!isCurrentSelection()) {
+          this.subtitleSelectionTimer = null;
+          return;
+        }
         activationAttempts += 1;
         const activated = activateTrack();
         if (!activated && activationAttempts < 6) {
@@ -17310,6 +17348,7 @@ export const PlayerScreen = {
     this.failedPlaybackStreamIds?.clear?.();
     this.skipIntervalsRequestToken = Number(this.skipIntervalsRequestToken || 0) + 1;
     this.subtitleLoadToken = (this.subtitleLoadToken || 0) + 1;
+    this.subtitleSelectionToken = Number(this.subtitleSelectionToken || 0) + 1;
     this.manifestLoadToken = (this.manifestLoadToken || 0) + 1;
     this.trackDiscoveryToken = (this.trackDiscoveryToken || 0) + 1;
     this.clearStartupAudioPreferenceRetry();

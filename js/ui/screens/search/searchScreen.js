@@ -2056,6 +2056,52 @@ export const SearchScreen = {
     });
   },
 
+  dismissSearchKeyboard(nextTarget = null) {
+    const input = this.container?.querySelector("#searchInput");
+    if (!input || nextTarget === input || nextTarget?.closest?.("#searchInput") === input) {
+      return false;
+    }
+    if (document.activeElement !== input) {
+      return false;
+    }
+    input.blur?.();
+    recordSearchMetric("pointerKeyboardDismissals");
+    return true;
+  },
+
+  onPointerMove(event) {
+    const target = event?.target || null;
+    if (target?.closest?.(".search-results-row")) {
+      this.dismissSearchKeyboard(target);
+    }
+  },
+
+  onPointerFocus(target) {
+    if (!target || !this.container?.contains(target)) {
+      return false;
+    }
+
+    // FocusEngine intentionally avoids native focus for poster cards. Blur the
+    // text input explicitly when Magic Remote focus leaves the search field so
+    // webOS closes its on-screen keyboard instead of covering the results.
+    this.dismissSearchKeyboard(target);
+
+    const sidebarFocused = isRootSidebarNode(target);
+    this.focusZone = sidebarFocused ? "sidebar" : "content";
+    if (!this.layoutPrefs?.modernSidebar) {
+      setLegacySidebarExpanded(this.container, sidebarFocused);
+    }
+    if (!sidebarFocused) {
+      this.rememberContentFocus(target);
+    }
+    if (String(target.dataset.navZone || "") === "results") {
+      this.ensureResultsRowVisible(target);
+      this.ensureResultCardVisible(null, target);
+    }
+    this.captureLiveViewState();
+    return true;
+  },
+
   async onKeyDown(event) {
     const code = Number(event?.keyCode || 0);
     if (this.suppressHoldMenuEnterUntilKeyUp && code === 13) {

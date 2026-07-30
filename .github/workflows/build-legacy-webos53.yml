@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - webos4-chromium53
       - legacy-webos53-lite
+  pull_request:
+    branches:
+      - webos4-chromium53
 
 permissions:
   contents: read
@@ -30,6 +34,9 @@ jobs:
       - name: Install exact dependencies
         run: npm ci
 
+      - name: Verify Chromium 53 policy
+        run: npm run verify:webos53-policy
+
       - name: Run tests when present
         run: |
           if compgen -G 'tests/*.test.mjs' > /dev/null; then
@@ -37,6 +44,9 @@ jobs:
           else
             echo 'No tests/*.test.mjs files are present in this upstream revision; skipping.'
           fi
+
+      - name: Run source lint
+        run: npm run lint
 
       - name: Create non-secret runtime placeholders
         run: node scripts/create-placeholder-properties.mjs

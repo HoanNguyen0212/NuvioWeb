@@ -1,0 +1,196 @@
+name: Propose upstream Nuvio update
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Upstream release tag or branch (blank = latest published release)"
+        required: false
+        type: string
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: propose-upstream-update
+  cancel-in-progress: false
+
+env:
+  CANONICAL_BRANCH: webos4-chromium53
+  UPSTREAM_REPOSITORY: NuvioMedia/NuvioWeb
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the canonical custom branch
+        uses: actions/checkout@v4
+        with:
+          ref: webos4-chromium53
+          fetch-depth: 0
+
+      - name: Resolve requested upstream ref
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_REF: ${{ inputs.upstream_ref }}
+        run: |
+          set -euo pipefail
+          REF="${REQUESTED_REF//[[:space:]]/}"
+          if [ -z "$REF" ]; then
+            REF="$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest" --jq .tag_name)"
+          fi
+          if ! printf '%s' "$REF" | grep -Eq '^[A-Za-z0-9._/-]+$'; then
+            echo "Unsafe upstream ref: $REF" >&2
+            exit 1
+          fi
+          SAFE_REF="$(printf '%s' "$REF" | tr '/:' '--')"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "safe_ref=$SAFE_REF" >> "$GITHUB_OUTPUT"
+          echo "Resolved upstream ref: $REF" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fetch upstream source
+        id: fetch
+        env:
+          UPSTREAM_REF: ${{ steps.upstream.outputs.ref }}
+        run: |
+          set -euo pipefail
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git" 2>/dev/null || \
+            git remote set-url upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --force upstream main
+          if git fetch --force upstream "refs/tags/${UPSTREAM_REF}:refs/tags/${UPSTREAM_REF}"; then
+            TARGET="$(git rev-parse "${UPSTREAM_REF}^{commit}")"
+          else
+            git fetch --force upstream "$UPSTREAM_REF"
+            TARGET="$(git rev-parse FETCH_HEAD)"
+          fi
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "Upstream commit: $TARGET" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check whether update is already integrated
+        id: integrated
+        env:
+          TARGET: ${{ steps.fetch.outputs.target }}
+        run: |
+          if git merge-base --is-ancestor "$TARGET" HEAD; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+            echo "The upstream ref is already contained in ${CANONICAL_BRANCH}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream on an isolated proposal branch
+        if: steps.integrated.outputs.value != 'true'
+        id: merge
+        continue-on-error: true
+        env:
+          TARGET: ${{ steps.fetch.outputs.target }}
+          UPSTREAM_REF: ${{ steps.upstream.outputs.ref }}
+          SAFE_REF: ${{ steps.upstream.outputs.safe_ref }}
+        run: |
+          set -euo pipefail
+          BRANCH="update/upstream-${SAFE_REF}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH" "origin/${CANONICAL_BRANCH}"
+          set +e
+          git merge --no-ff --no-edit "$TARGET"
+          MERGE_STATUS=$?
+          set -e
+          if [ "$MERGE_STATUS" -ne 0 ]; then
+            git diff --name-only --diff-filter=U | sort > /tmp/upstream-conflicts.txt
+            {
+              echo "status=conflict"
+              echo "branch=$BRANCH"
+              echo "conflicts<<EOF"
+              cat /tmp/upstream-conflicts.txt
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            git merge --abort || true
+            exit 1
+          fi
+          echo "status=clean" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Report merge conflicts as an issue
+        if: steps.integrated.outputs.value != 'true' && steps.merge.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REF: ${{ steps.upstream.outputs.ref }}
+          TARGET: ${{ steps.fetch.outputs.target }}
+          CONFLICTS: ${{ steps.merge.outputs.conflicts }}
+        run: |
+          set -euo pipefail
+          TITLE="Upstream update blocked: ${UPSTREAM_REF}"
+          {
+            echo "The automatic merge into \`${CANONICAL_BRANCH}\` found conflicts."
+            echo
+            echo "Upstream commit: \`${TARGET}\`"
+            echo
+            echo "Conflicting files:"
+            echo '```text'
+            printf '%s\n' "$CONFLICTS"
+            echo '```'
+            echo
+            echo "Resolve these files on a temporary update branch. Do not hard-reset the canonical custom branch."
+          } > /tmp/upstream-issue.md
+          ISSUE_NUMBER="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -n 1)"
+          if [ -n "$ISSUE_NUMBER" ]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/upstream-issue.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file /tmp/upstream-issue.md
+          fi
+          cat /tmp/upstream-issue.md >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Push clean update proposal
+        if: steps.integrated.outputs.value != 'true' && steps.merge.outcome == 'success'
+        env:
+          BRANCH: ${{ steps.merge.outputs.branch }}
+        run: git push --force-with-lease origin "HEAD:refs/heads/${BRANCH}"
+
+      - name: Open or refresh update pull request
+        if: steps.integrated.outputs.value != 'true' && steps.merge.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.merge.outputs.branch }}
+          UPSTREAM_REF: ${{ steps.upstream.outputs.ref }}
+          TARGET: ${{ steps.fetch.outputs.target }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Upstream update"
+            echo
+            echo "Merges \`${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}\` (\`${TARGET}\`) into \`${CANONICAL_BRANCH}\`."
+            echo
+            echo "## Safety"
+            echo
+            echo "- This PR was created from the canonical custom branch; it never resets that branch."
+            echo "- Public CI uses placeholder runtime values only."
+            echo "- Do not merge until Chromium 53 build/package checks pass."
+            echo "- Do not create a stable tag until physical TV navigation and playback acceptance pass."
+            echo
+            echo "## Required manual acceptance"
+            echo
+            echo "- [ ] Cold boot and Home shell"
+            echo "- [ ] Search and Magic Remote keyboard dismissal"
+            echo "- [ ] Detail, stream selection, HLS/DASH playback and subtitles"
+            echo "- [ ] Settings, Library, See All and root sidebar navigation"
+            echo "- [ ] Cloud addon sync and stream filtering"
+          } > /tmp/upstream-pr.md
+          PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$BRANCH" --json number --jq '.[0].number // empty')"
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/upstream-pr.md
+          else
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base "$CANONICAL_BRANCH" \
+              --head "$BRANCH" \
+              --title "chore(webos4): integrate upstream ${UPSTREAM_REF}" \
+              --body-file /tmp/upstream-pr.md
+          fi

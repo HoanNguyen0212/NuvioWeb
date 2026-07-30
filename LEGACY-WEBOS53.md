@@ -48,8 +48,11 @@ The custom files are copied by `scripts/build.mjs`, included by the generated we
 
 ## Workflows
 
-- `.github/workflows/legacy-webos53-analysis.yml`: analysis reports only
-- `.github/workflows/build-legacy-webos53.yml`: placeholder candidate IPK plus checksums, unpacked manifest, bundle report, and static verification
+- `.github/workflows/legacy-webos53-analysis.yml`: analysis reports for pushes and update PRs
+- `.github/workflows/build-legacy-webos53.yml`: placeholder candidate IPK plus checksums, unpacked manifest, bundle report, and static verification for the canonical `webos4-chromium53` branch
+- `.github/workflows/propose-upstream-update.yml`: safely checks new upstream releases and creates an isolated update PR, or reports merge conflicts without resetting the custom branch
+
+See `docs/webos4-upstream-update.md` for branch roles, conflict resolution, private candidate handling, TV acceptance, and stable-tag promotion.
 
 ## Remaining acceptance stages
 

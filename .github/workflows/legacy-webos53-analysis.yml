@@ -4,7 +4,18 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - webos4-chromium53
       - legacy-webos53-lite
+    paths:
+      - "js/**"
+      - "css/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/legacy-webos53-analysis.yml"
+  pull_request:
+    branches:
+      - webos4-chromium53
     paths:
       - "js/**"
       - "css/**"
@@ -37,6 +48,9 @@ jobs:
       - name: Install exact dependencies
         run: npm ci
 
+      - name: Verify Chromium 53 policy
+        run: npm run verify:webos53-policy
+
       - name: Run tests when the upstream checkout contains tests
         run: |
           if compgen -G 'tests/*.test.mjs' > /dev/null; then
@@ -44,6 +58,9 @@ jobs:
           else
             echo 'No tests/*.test.mjs files are present in this upstream revision; skipping.'
           fi
+
+      - name: Run source lint
+        run: npm run lint
 
       - name: Build Chrome 53 chunked analysis bundle
         env:

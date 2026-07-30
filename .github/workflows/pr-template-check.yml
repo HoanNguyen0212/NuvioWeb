@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   validate_pr_body:
+    if: ${{ !startsWith(github.head_ref, 'update/upstream-') }}
     runs-on: ubuntu-latest
 
     steps:

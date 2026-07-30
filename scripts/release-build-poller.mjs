@@ -17,6 +17,10 @@ const deployEnabled = Boolean(deployDirRaw);
 const deployDir = deployEnabled ? path.resolve(deployDirRaw) : "";
 const stateFile = process.env.RELEASE_POLL_STATE_FILE || defaultStateFile;
 const githubApiUrl = `https://api.github.com/repos/${defaultRepo}/releases?per_page=20`;
+const allowCustomizedCheckoutReset = /^(1|true|yes|on)$/i.test(
+  String(process.env.RELEASE_POLL_ALLOW_CUSTOM_BRANCH_RESET || "")
+);
+const protectedCustomBranches = new Set(["webos4-chromium53", "legacy-webos53-lite"]);
 
 function validateDeployDir(targetDir) {
   if (!targetDir) {
@@ -54,6 +58,34 @@ function runCommand(command, args) {
       }
 
       reject(new Error(`${command} ${args.join(" ")} exited with code ${code}`));
+    });
+  });
+}
+
+function runCommandCapture(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: rootDir,
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: false
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve(stdout.trim());
+        return;
+      }
+      reject(
+        new Error(`${command} ${args.join(" ")} exited with code ${code}: ${stderr.trim()}`)
+      );
     });
   });
 }
@@ -146,7 +178,15 @@ async function deployBuild() {
 }
 
 async function syncRepoToReleaseTag(tagName) {
-  log(`Syncing local checkout to release tag ${tagName} before build.`);
+  const currentBranch = await runCommandCapture("git", ["branch", "--show-current"]);
+  if (protectedCustomBranches.has(currentBranch) && !allowCustomizedCheckoutReset) {
+    throw new Error(
+      `Refusing to hard-reset protected custom branch ${currentBranch}. ` +
+        "Use the upstream update PR workflow instead. Set " +
+        "RELEASE_POLL_ALLOW_CUSTOM_BRANCH_RESET=1 only for an intentional destructive reset."
+    );
+  }
+  log(`Syncing disposable checkout to release tag ${tagName} before build.`);
   await runCommand("git", ["fetch", "--force", "origin", "tag", tagName]);
   await runCommand("git", ["reset", "--hard", tagName]);
 }

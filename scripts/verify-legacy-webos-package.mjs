@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "acorn";
 import { parseProperties } from "./envProperties.mjs";
+import { readAppMetadata } from "./appMetadata.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const appDir = path.join(rootDir, ".cache", "webos-package", "app");
@@ -63,8 +64,12 @@ async function walk(directory) {
 
 assert(await exists(appDir), `Missing staged webOS app: ${appDir}`);
 const appInfo = JSON.parse(await readFile(path.join(appDir, "appinfo.json"), "utf8"));
+const expectedMetadata = await readAppMetadata();
 assert(appInfo.id === "space.nuvio.webos", `Unexpected app id: ${appInfo.id}`);
-assert(appInfo.version === "0.3.24", `Unexpected app version: ${appInfo.version}`);
+assert(
+  appInfo.version === expectedMetadata.version,
+  `Package version ${appInfo.version} does not match source version ${expectedMetadata.version}`
+);
 assert(appInfo.requiredVersion === "4.0.0", `Unsafe webOS requirement: ${appInfo.requiredVersion}`);
 
 const indexHtml = await readFile(path.join(appDir, "index.html"), "utf8");

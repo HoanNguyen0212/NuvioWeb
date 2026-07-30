@@ -151,12 +151,14 @@ function getDirectionFromKeyCode(keyCode) {
 async function getLocalSidebarProfileState() {
   const activeProfileId = String(ProfileManager.getActiveProfileId() || "");
   const profiles = await ProfileManager.getProfiles();
-  const avatarCatalog = await AvatarRepository.getAvatarCatalog().catch(() => []);
   const activeProfile = profiles.find((profile) => String(profile.id || profile.profileIndex || "1") === activeProfileId)
     || profiles[0]
     || null;
   const name = String(activeProfile?.name || t("sidebar.profileFallback")).trim() || t("sidebar.profileFallback");
-  const avatarUrl = activeProfile?.avatarUrl || AvatarRepository.getAvatarImageUrl(activeProfile?.avatarId, avatarCatalog);
+  // This is the boot-critical local shell. Never wait for the remote avatar
+  // catalog here; getSidebarProfileState() refreshes it after Home is usable.
+  const avatarUrl =
+    activeProfile?.avatarUrl || AvatarRepository.getAvatarImageUrl(activeProfile?.avatarId);
 
   return {
     activeProfileName: name,

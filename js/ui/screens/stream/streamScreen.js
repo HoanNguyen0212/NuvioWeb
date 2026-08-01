@@ -43,6 +43,7 @@ import {
   normalizeStreamBadgeChipColor,
   normalizeStreamBadgeRules
 } from "../../../core/streams/streamBadgeRules.js";
+import { probeWebOsVideoCapabilities } from "../../../platform/webos/webosVideoCapabilities.js";
 
 const STREAM_BADGE_LIMIT = 9;
 const WEBOS_NATIVE_PLAYER_APP_IDS = [
@@ -1422,6 +1423,12 @@ export const StreamScreen = {
         .map((addon) => String(addon?.displayName || addon?.name || "").trim())
         .filter(Boolean)
     );
+    const videoCapabilities = Environment.isWebOS()
+      ? {
+        ...probeWebOsVideoCapabilities(),
+        unsupportedAudioCodecs: ["dts", "truehd"]
+      }
+      : null;
     const selected = selectAutoPlayStream(this.getFilteredStreams(), {
       mode: settings.streamAutoPlayMode,
       source: settings.streamAutoPlaySource,
@@ -1430,7 +1437,8 @@ export const StreamScreen = {
       selectedAddons: settings.streamAutoPlaySelectedAddons,
       selectedPlugins: settings.streamAutoPlaySelectedPlugins,
       preferredBingeGroup,
-      preferBingeGroupInSelection: Boolean(preferredBingeGroup)
+      preferBingeGroupInSelection: Boolean(preferredBingeGroup),
+      capabilities: videoCapabilities
     });
     if (!selected?.id) {
       if (allLoaded) {

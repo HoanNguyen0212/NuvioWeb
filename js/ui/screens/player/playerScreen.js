@@ -34,6 +34,12 @@ import { TorrentSettingsStore } from "../../../data/local/torrentSettingsStore.j
 import { WebOsAudioCompatibilityStore } from "../../../data/local/webOsAudioCompatibilityStore.js";
 import { matchStreamBadges } from "../../../core/streams/streamBadgeRules.js";
 import { selectAutoPlayStream } from "../../../core/streams/streamAutoPlaySelector.js";
+import {
+  compatibilityRank,
+  evaluateStreamCompatibility,
+  isSdrAvcFallback
+} from "../../../core/streams/streamCompatibility.js";
+import { parseStreamVideoTraits } from "../../../core/streams/streamVideoTraits.js";
 import { metaRepository } from "../../../data/repository/metaRepository.js";
 import { I18n } from "../../../i18n/index.js";
 import { Environment } from "../../../platform/environment.js";
@@ -2515,6 +2521,15 @@ export const PlayerScreen = {
   buildPlaybackContext(streamCandidate = this.getCurrentStreamCandidate()) {
     const requestHeaders = this.getCurrentStreamRequestHeaders(streamCandidate);
     const mediaSourceType = this.resolvePlaybackMediaSourceType(streamCandidate);
+    const videoTraits = parseStreamVideoTraits(streamCandidate || {
+      url: this.activePlaybackUrl,
+      mimeType: mediaSourceType
+    });
+    const capabilityDecision = this.evaluateSourceCompatibility(streamCandidate || {
+      url: this.activePlaybackUrl,
+      mimeType: mediaSourceType,
+      ...videoTraits
+    });
     return {
       itemId: this.params.itemId || null,
       itemType: normalizeItemType(this.params.itemType || "movie"),
@@ -2528,6 +2543,9 @@ export const PlayerScreen = {
       episodeTitle: this.params.episodeTitle || this.params.playerSubtitle || null,
       requestHeaders,
       mediaSourceType,
+      streamCandidate: streamCandidate || null,
+      videoTraits,
+      capabilityDecision,
       streamIdentity: streamCandidate
         ? buildStreamResumeIdentity(streamCandidate) || streamMergeKey(streamCandidate) || null
         : null
@@ -3342,6 +3360,30 @@ export const PlayerScreen = {
       stream?.description || "",
       stream?.url || ""
     ].join(" ")).toLowerCase();
+  },
+
+  getStreamCompatibilityCapabilities() {
+    if (!Environment.isWebOS() || typeof PlayerController.getPlaybackCapabilities !== "function") {
+      return null;
+    }
+    return PlayerController.getPlaybackCapabilities();
+  },
+
+  evaluateSourceCompatibility(streamCandidate, context = {}) {
+    const capabilities = this.getStreamCompatibilityCapabilities();
+    if (!capabilities) {
+      return {
+        status: "unknown",
+        severity: "warning",
+        reason: "MISSING_CODEC_METADATA",
+        preferredEngine: "",
+        traits: parseStreamVideoTraits(streamCandidate || {})
+      };
+    }
+    return evaluateStreamCompatibility(streamCandidate || {}, capabilities, {
+      unsupportedAudioCodecs: PlayerController.getWebOsUnsupportedAudioCodecs?.() || [],
+      ...context
+    });
   },
 
   getWebOsAudioCompatibilityScore(streamCandidate) {
@@ -6517,7 +6559,8 @@ export const PlayerScreen = {
       selectedPlugins: shouldAutoSelectInManualMode ? [] : settings.streamAutoPlaySelectedPlugins,
       preferredBingeGroup,
       preferBingeGroupInSelection: preferBingeGroup,
-      bingeGroupOnly: Boolean(options.bingeGroupOnly || bingeGroupOnlyManualMode)
+      bingeGroupOnly: Boolean(options.bingeGroupOnly || bingeGroupOnlyManualMode),
+      capabilities: this.getStreamCompatibilityCapabilities()
     });
   },
 
@@ -17115,6 +17158,7 @@ export const PlayerScreen = {
           || TizenStreamingServerResolver.canResolveStream(stream)
       ))
       .map((stream) => {
+        const compatibility = this.evaluateSourceCompatibility(stream);
         const presentation = stream.streamPresentation || stream.raw?.streamPresentation || {};
         const text = [
           stream.title,
@@ -17134,7 +17178,8 @@ export const PlayerScreen = {
           stream.externalUrl,
           stream.infoHash
         ].filter(Boolean).join(" ").toLowerCase();
-        let score = 0;
+        let score = compatibility.status === "compatible" ? 1000 : 0;
+        if (isSdrAvcFallback(compatibility)) score += 40;
 
         if (text.includes("2160") || text.includes("4k")) score += 60;
         else if (text.includes("1080")) score += 40;
@@ -17195,9 +17240,13 @@ export const PlayerScreen = {
           score += 2;
         }
 
-        return { stream, score };
+        return { stream, score, compatibility };
       })
-      .sort((left, right) => right.score - left.score);
+      .filter((entry) => entry.compatibility.status !== "incompatible")
+      .sort((left, right) => {
+        const compatibilityDifference = compatibilityRank(left.compatibility) - compatibilityRank(right.compatibility);
+        return compatibilityDifference || right.score - left.score;
+      });
 
     return scored[0]?.stream || null;
   },

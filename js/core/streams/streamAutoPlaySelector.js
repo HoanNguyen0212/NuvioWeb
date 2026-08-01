@@ -1,3 +1,5 @@
+import { compatibilityRank, evaluateStreamCompatibility } from "./streamCompatibility.js";
+
 // Auto stream selection, ported from the Android TV app's StreamAutoPlaySelector
 // and StreamAutoPlayPolicy so the two clients behave the same. Given the list of
 // streams shown in the picker and the user's auto-play settings, it returns the
@@ -97,6 +99,25 @@ function streamSearchableText(stream = {}) {
   return parts.map((part) => String(part || "")).join(" ");
 }
 
+export function rankAutoPlayCandidates(streams = [], options = {}) {
+  const list = Array.isArray(streams) ? streams.filter(Boolean) : [];
+  if (!options.capabilities && typeof options.evaluateCompatibility !== "function") {
+    return list.map((stream) => ({ stream, decision: null }));
+  }
+  return list
+    .map((stream, index) => {
+      const decision = typeof options.evaluateCompatibility === "function"
+        ? options.evaluateCompatibility(stream)
+        : evaluateStreamCompatibility(stream, options.capabilities, options.compatibilityContext || {});
+      return { stream, decision, index };
+    })
+    .sort((left, right) => {
+      const rankDifference = compatibilityRank(left.decision) - compatibilityRank(right.decision);
+      return rankDifference || left.index - right.index;
+    })
+    .filter((entry) => entry.decision?.status !== "incompatible");
+}
+
 function scopeStreamsBySource(streams, source, installedAddonNames) {
   const installed = installedAddonNames instanceof Set
     ? installedAddonNames
@@ -149,13 +170,14 @@ export function selectAutoPlayStream(streams, options = {}) {
   const selectedPlugins = options.selectedPlugins instanceof Set
     ? options.selectedPlugins
     : new Set(Array.isArray(options.selectedPlugins) ? options.selectedPlugins : []);
-  const candidates = scopeStreamsBySource(list, source, installedAddonNames).filter((stream) => {
+  const scopedCandidates = scopeStreamsBySource(list, source, installedAddonNames).filter((stream) => {
     const addonName = String(stream?.addonName || "");
     const isAddonStream = installedAddonNames.has(addonName);
     return isAddonStream
       ? (!selectedAddons.size || selectedAddons.has(addonName))
       : (!selectedPlugins.size || selectedPlugins.has(addonName));
   });
+  const candidates = rankAutoPlayCandidates(scopedCandidates, options).map((entry) => entry.stream);
   if (!candidates.length) {
     return null;
   }

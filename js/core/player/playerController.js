@@ -3881,11 +3881,14 @@ export const PlayerController = {
 
     const sourceType = this.currentPlaybackMediaSourceType || this.resolveRuntimeSourceType(this.guessMediaMimeType(url)) || null;
     const preferredEngine = forceEngine || this.choosePlaybackEngine(url, sourceType, itemType, streamCandidate);
-    this.currentPlaybackCompatibility = capabilityDecision || this.evaluatePlaybackEngineCompatibility(
+    this.currentPlaybackCompatibility = this.evaluatePlaybackEngineCompatibility(
       preferredEngine,
       streamCandidate,
       sourceType
     );
+    if (!forceEngine && capabilityDecision?.status === "incompatible") {
+      this.currentPlaybackCompatibility = capabilityDecision;
+    }
     if (preferredEngine === "none" || this.currentPlaybackCompatibility.status === "incompatible") {
       this.lastPlaybackErrorCode = 4;
       this.emitVideoEvent("error", {

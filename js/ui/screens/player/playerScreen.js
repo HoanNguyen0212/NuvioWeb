@@ -44,6 +44,7 @@ import {
   classifyPlaybackFailure,
   isCodecFallbackClassification
 } from "../../../core/player/playbackFailureClassifier.js";
+import { selectCompatibleFallbackSource } from "../../../core/streams/streamFallbackSelector.js";
 import { metaRepository } from "../../../data/repository/metaRepository.js";
 import { I18n } from "../../../i18n/index.js";
 import { Environment } from "../../../platform/environment.js";
@@ -2300,6 +2301,9 @@ export const PlayerScreen = {
     this.lastPlaybackFailureClassification = "";
     this.failedPlaybackUrls = new Set();
     this.failedPlaybackStreamIds = new Set();
+    this.autoSourceFallbackCount = 0;
+    this.maxAutoSourceFallbackCount = 1;
+    this.autoSourceFallbackInProgress = false;
     this.playbackStallTimer = null;
     this.engineFsStartupRetryTimer = null;
     this.engineFsStartupErrorRetries = 0;
@@ -7855,10 +7859,13 @@ export const PlayerScreen = {
       });
       this.lastPlaybackFailureClassification = failureClassification;
       eventDetail.failureClassification = failureClassification;
+      const automaticFallback = !this.hasPresentedPlaybackFrame && isCodecFallbackClassification(failureClassification)
+        ? this.findAutomaticFallbackSource(currentSourceCandidate)
+        : null;
       PlayerController.recordPlaybackFailure?.({
         ...eventDetail,
         mediaErrorCode
-      }, failureClassification);
+      }, failureClassification, automaticFallback?.stream?.id || "");
       const currentEngineFsState = this.currentEngineFsStream || null;
       const publicEngineFsUrl = String(currentEngineFsState?.publicPlaybackUrl || "").trim();
       const isLocalEngineFsNetworkFailure = currentEngineFsState?.baseUrlKind === "local-service"
@@ -7918,6 +7925,11 @@ export const PlayerScreen = {
       }
 
       if (!this.hasPresentedPlaybackFrame && (mediaErrorCode === 2 || mediaErrorCode === 3 || mediaErrorCode === 4)) {
+        this.markPlaybackSourceFailed(this.activePlaybackUrl);
+        if (automaticFallback) {
+          await this.startAutomaticSourceFallback(automaticFallback, failureClassification);
+          return;
+        }
         if (currentEngineFsState) {
           const stats = await this.fetchCurrentEngineFsStats({ timeoutMs: 2500 });
           if (this.shouldRetryEngineFsStartupError(stats)) {
@@ -7926,7 +7938,6 @@ export const PlayerScreen = {
           }
         }
 
-        this.markPlaybackSourceFailed(this.activePlaybackUrl);
         const targetEngineCandidate = typeof PlayerController.getAlternativePlaybackEngine === "function"
           ? PlayerController.getAlternativePlaybackEngine(this.activePlaybackUrl)
           : null;
@@ -9859,12 +9870,64 @@ export const PlayerScreen = {
     await this.playStreamCandidate(selected, { preservePlaybackState: true });
   },
 
+  getAttemptedPlaybackSourceKeys() {
+    return new Set([
+      ...Array.from(this.failedPlaybackUrls || []),
+      ...Array.from(this.failedPlaybackStreamIds || [])
+    ]);
+  },
+
+  findAutomaticFallbackSource(currentSource = this.getCurrentStreamCandidate()) {
+    if (
+      Number(this.autoSourceFallbackCount || 0) >= Number(this.maxAutoSourceFallbackCount || 1)
+      || this.autoSourceFallbackInProgress
+    ) {
+      return null;
+    }
+    return selectCompatibleFallbackSource(this.streamCandidates, {
+      capabilities: this.getStreamCompatibilityCapabilities() || {},
+      attemptedSourceKeys: this.getAttemptedPlaybackSourceKeys(),
+      currentSource,
+      compatibilityContext: {
+        unsupportedAudioCodecs: PlayerController.getWebOsUnsupportedAudioCodecs?.() || []
+      }
+    });
+  },
+
+  async startAutomaticSourceFallback(fallbackEntry, classification = "") {
+    const fallback = fallbackEntry?.stream || null;
+    if (!fallback || this.autoSourceFallbackInProgress) return false;
+    this.autoSourceFallbackInProgress = true;
+    this.autoSourceFallbackCount = Number(this.autoSourceFallbackCount || 0) + 1;
+    this.lastPlaybackErrorAt = 0;
+    this.lastPlaybackFailureClassification = "";
+    this.loadingVisible = true;
+    this.paused = false;
+    this.sourcesError = "";
+    this.clearStartupError();
+    this.updateLoadingVisibility();
+    this.showAspectToast(
+      classification === "UNSUPPORTED_AUDIO_CODEC"
+        ? "Audio codec is not compatible. Trying an SDR source…"
+        : "This HDR/10-bit source is not compatible. Trying an SDR source…"
+    );
+    try {
+      await this.playStreamCandidate(fallback, {
+        preservePendingRestore: Boolean(this.pendingPlaybackRestore),
+        resetSilentAudioState: false
+      });
+      return true;
+    } finally {
+      this.autoSourceFallbackInProgress = false;
+    }
+  },
+
   markPlaybackSourceFailed(url = this.activePlaybackUrl) {
     const normalizedUrl = String(url || "").trim();
     if (normalizedUrl) {
       (this.failedPlaybackUrls || (this.failedPlaybackUrls = new Set())).add(normalizedUrl);
     }
-    const currentCandidate = this.getCurrentStreamCandidate?.();
+    const currentCandidate = this.getStreamCandidateByUrl?.(normalizedUrl) || this.getCurrentStreamCandidate?.();
     const currentId = String(currentCandidate?.id || "").trim();
     if (currentId) {
       (this.failedPlaybackStreamIds || (this.failedPlaybackStreamIds = new Set())).add(currentId);

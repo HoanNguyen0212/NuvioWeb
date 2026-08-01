@@ -14,6 +14,12 @@ import {
 import { WebOsLunaService } from "../../platform/webos/webosLunaService.js";
 import { WebOSPlayerExtensions } from "../../platform/webos/webosPlayerExtensions.js";
 import { loadStreamingLibs } from "../../runtime/loadStreamingLibs.js";
+import {
+  isCapabilitySupported,
+  probeWebOsVideoCapabilities
+} from "../../platform/webos/webosVideoCapabilities.js";
+import { evaluateStreamCompatibility } from "../streams/streamCompatibility.js";
+import { parseStreamVideoTraits } from "../streams/streamVideoTraits.js";
 
 const MIN_PROGRESS_SYNC_DURATION_MS = 1000;
 const WEBOS_AUDIO_TRACK_SELECTION_TIMEOUT_MS = 4000;
@@ -118,6 +124,10 @@ export const PlayerController = {
   currentPlaybackUrl: "",
   currentPlaybackHeaders: {},
   currentPlaybackMediaSourceType: null,
+  currentPlaybackStreamCandidate: null,
+  currentPlaybackTraits: null,
+  currentPlaybackCompatibility: null,
+  startupDiagnostics: null,
   lastProgressSnapshot: null,
   lastKnownDurationSeconds: 0,
   avplayFallbackAttempts: new Set(),
@@ -2490,7 +2500,20 @@ export const PlayerController = {
       || normalized === "stream";
   },
 
-  getPlaybackEngineCandidates(url, sourceType = null, itemType = this.currentItemType) {
+  evaluatePlaybackEngineCompatibility(engineName, streamCandidate = null, sourceType = null) {
+    const stream = streamCandidate || {
+      url: this.currentPlaybackUrl,
+      mimeType: sourceType || this.currentPlaybackMediaSourceType,
+      ...(this.currentPlaybackTraits || {})
+    };
+    return evaluateStreamCompatibility(stream, this.getPlaybackCapabilities(), {
+      engine: engineName,
+      traits: streamCandidate ? null : this.currentPlaybackTraits,
+      unsupportedAudioCodecs: this.getWebOsUnsupportedAudioCodecs()
+    });
+  },
+
+  getPlaybackEngineCandidates(url, sourceType = null, itemType = this.currentItemType, streamCandidate = null) {
     const normalizedSourceType = String(sourceType || this.guessMediaMimeType(url) || "").trim();
     const avplayEngine = this.getPlatformAvplayEngineName();
     const isTizenRuntime = Platform.isTizen();
@@ -2509,6 +2532,9 @@ export const PlayerController = {
       }
       target.push(normalized);
     };
+    const filterCompatibleCandidates = (candidates) => candidates.filter((candidate) => (
+      this.evaluatePlaybackEngineCompatibility(candidate, streamCandidate, normalizedSourceType).status !== "incompatible"
+    ));
 
     if (this.isLikelyHlsMimeType(normalizedSourceType)) {
       const candidates = [];
@@ -2533,7 +2559,7 @@ export const PlayerController = {
       if (canUseAvPlay) {
         pushCandidate(candidates, avplayEngine);
       }
-      return candidates;
+      return filterCompatibleCandidates(candidates);
     }
 
     if (this.isLikelyDashMimeType(normalizedSourceType)) {
@@ -2559,7 +2585,7 @@ export const PlayerController = {
       if (canUseAvPlay) {
         pushCandidate(candidates, avplayEngine);
       }
-      return candidates;
+      return filterCompatibleCandidates(candidates);
     }
 
     if (this.isLikelySmoothStreamingMimeType(normalizedSourceType)) {
@@ -2573,7 +2599,7 @@ export const PlayerController = {
       if (canUseAvPlay) {
         pushCandidate(candidates, avplayEngine);
       }
-      return candidates;
+      return filterCompatibleCandidates(candidates);
     }
 
     const candidates = [];
@@ -2584,7 +2610,7 @@ export const PlayerController = {
     if (!isTizenRuntime && canUseAvPlay) {
       pushCandidate(candidates, avplayEngine);
     }
-    return candidates;
+    return filterCompatibleCandidates(candidates);
   },
 
   getAlternativePlaybackEngine(url = this.currentPlaybackUrl, sourceType = this.currentPlaybackMediaSourceType, itemType = this.currentItemType) {
@@ -2594,7 +2620,12 @@ export const PlayerController = {
     }
     const attemptedEngines = this.getAttemptedPlaybackEngines(normalizedUrl);
     const currentEngine = String(this.playbackEngine || "").trim();
-    const candidates = this.getPlaybackEngineCandidates(normalizedUrl, sourceType, itemType);
+    const candidates = this.getPlaybackEngineCandidates(
+      normalizedUrl,
+      sourceType,
+      itemType,
+      this.currentPlaybackStreamCandidate
+    );
     return candidates.find((candidate) => candidate !== currentEngine && !attemptedEngines.has(candidate)) || null;
   },
 
@@ -2607,29 +2638,32 @@ export const PlayerController = {
     }
   },
 
-  getPlaybackCapabilities() {
-    const supports = (mimeType) => this.canPlayNatively(mimeType);
+  getPlaybackCapabilities({ forceRefresh = false } = {}) {
+    const videoProfile = probeWebOsVideoCapabilities({ forceRefresh });
+    const supports = (value) => isCapabilitySupported(value);
     const capabilities = {
+      ...videoProfile,
+      unsupportedAudioCodecs: this.getWebOsUnsupportedAudioCodecs(),
       avplay: this.canUseAvPlay(),
-      hls: supports("application/vnd.apple.mpegurl"),
-      dash: supports("application/dash+xml"),
-      smoothStreaming: supports("application/vnd.ms-sstr+xml"),
-      mp4: supports("video/mp4"),
-      mp4H264: supports('video/mp4; codecs="avc1.4d401f,mp4a.40.2"'),
-      mp4Hevc: supports('video/mp4; codecs="hvc1.1.6.L93.B0,mp4a.40.2"') || supports('video/mp4; codecs="hev1.1.6.L93.B0,mp4a.40.2"'),
-      mp4HevcMain10: supports('video/mp4; codecs="hvc1.2.4.L153.B0,mp4a.40.2"') || supports('video/mp4; codecs="hev1.2.4.L153.B0,mp4a.40.2"'),
-      mp4Av1: supports('video/mp4; codecs="av01.0.08M.08,mp4a.40.2"'),
-      webmVp9: supports('video/webm; codecs="vp9,opus"'),
-      webm: supports("video/webm"),
-      mkvH264: supports('video/x-matroska; codecs="avc1.4d401f,mp4a.40.2"') || supports("video/x-matroska"),
-      quicktime: supports("video/quicktime"),
-      mpegTs: supports("video/mp2t"),
-      audioAac: supports('audio/mp4; codecs="mp4a.40.2"'),
-      audioMp3: supports("audio/mpeg"),
-      audioFlac: supports("audio/flac"),
-      audioAc3: supports('audio/mp4; codecs="ac-3"') || supports('audio/mp4; codecs="dac3"'),
-      audioEac3: supports('audio/mp4; codecs="ec-3"') || supports('audio/mp4; codecs="dec3"'),
-      dolbyVision: supports('video/mp4; codecs="dvh1.05.06,ec-3"') || supports('video/mp4; codecs="dvhe.05.06,ec-3"')
+      hls: supports(videoProfile.native.hls),
+      dash: supports(videoProfile.native.dash),
+      smoothStreaming: this.canPlayNatively("application/vnd.ms-sstr+xml"),
+      mp4: supports(videoProfile.native.mp4),
+      mp4H264: supports(videoProfile.native.avc),
+      mp4Hevc: supports(videoProfile.native.hevcMain),
+      mp4HevcMain10: supports(videoProfile.native.hevcMain10),
+      mp4Av1: supports(videoProfile.native.av1),
+      webmVp9: supports(videoProfile.native.vp9),
+      webm: supports(videoProfile.native.webm),
+      mkvH264: supports(videoProfile.native.mkv),
+      quicktime: this.canPlayNatively("video/quicktime"),
+      mpegTs: this.canPlayNatively("video/mp2t"),
+      audioAac: supports(videoProfile.native.aac),
+      audioMp3: this.canPlayNatively("audio/mpeg"),
+      audioFlac: this.canPlayNatively("audio/flac"),
+      audioAc3: supports(videoProfile.native.ac3),
+      audioEac3: supports(videoProfile.native.eac3),
+      dolbyVision: supports(videoProfile.native.dolbyVision)
     };
     capabilities.hdrLikely = capabilities.mp4HevcMain10 || capabilities.mp4Av1;
     capabilities.atmosLikely = capabilities.audioEac3;
@@ -3671,18 +3705,23 @@ export const PlayerController = {
       });
   },
 
-  choosePlaybackEngine(url, sourceType, itemType = this.currentItemType) {
+  choosePlaybackEngine(url, sourceType, itemType = this.currentItemType, streamCandidate = null) {
     if (Platform.isTizen() && this.canUseAvPlay()) {
       return this.getPlatformAvplayEngineName();
     }
-    const candidates = this.getPlaybackEngineCandidates(url, sourceType, itemType);
+    const candidates = this.getPlaybackEngineCandidates(url, sourceType, itemType, streamCandidate);
     if (candidates.length) {
       return candidates[0];
     }
     if (this.canUseAvPlay()) {
       return this.getPlatformAvplayEngineName();
     }
-    return "native-file";
+    const nativeDecision = this.evaluatePlaybackEngineCompatibility(
+      "native-file",
+      streamCandidate,
+      sourceType
+    );
+    return nativeDecision.status === "incompatible" ? "none" : "native-file";
   },
 
   async ensureAdaptiveLibrariesForSource(sourceType, playbackEngine = null) {
@@ -3800,7 +3839,7 @@ export const PlayerController = {
     }
   },
 
-  async play(url, { itemId = null, itemType = "movie", videoId = null, season = null, episode = null, title = null, poster = null, background = null, episodeTitle = null, requestHeaders = {}, mediaSourceType = null, forceEngine = null, streamIdentity = null } = {}) {
+  async play(url, { itemId = null, itemType = "movie", videoId = null, season = null, episode = null, title = null, poster = null, background = null, episodeTitle = null, requestHeaders = {}, mediaSourceType = null, forceEngine = null, streamIdentity = null, streamCandidate = null, videoTraits = null, capabilityDecision = null } = {}) {
     if (!this.video) return;
 
     const requestedUrl = String(url || "").trim();
@@ -3833,10 +3872,29 @@ export const PlayerController = {
     this.currentPlaybackUrl = requestedUrl;
     this.currentPlaybackHeaders = { ...(requestHeaders || {}) };
     this.currentPlaybackMediaSourceType = this.resolveRuntimeSourceType(mediaSourceType);
+    this.currentPlaybackStreamCandidate = streamCandidate || null;
+    this.currentPlaybackTraits = videoTraits || parseStreamVideoTraits(streamCandidate || {
+      url: requestedUrl,
+      mimeType: this.currentPlaybackMediaSourceType
+    });
     this.lastPlaybackErrorCode = 0;
 
     const sourceType = this.currentPlaybackMediaSourceType || this.resolveRuntimeSourceType(this.guessMediaMimeType(url)) || null;
-    const preferredEngine = forceEngine || this.choosePlaybackEngine(url, sourceType, itemType);
+    const preferredEngine = forceEngine || this.choosePlaybackEngine(url, sourceType, itemType, streamCandidate);
+    this.currentPlaybackCompatibility = capabilityDecision || this.evaluatePlaybackEngineCompatibility(
+      preferredEngine,
+      streamCandidate,
+      sourceType
+    );
+    if (preferredEngine === "none" || this.currentPlaybackCompatibility.status === "incompatible") {
+      this.lastPlaybackErrorCode = 4;
+      this.emitVideoEvent("error", {
+        playbackEngine: preferredEngine,
+        mediaErrorCode: 4,
+        compatibilityReason: this.currentPlaybackCompatibility.reason || "UNSUPPORTED_VIDEO_CODEC"
+      });
+      return;
+    }
     await this.ensureAdaptiveLibrariesForSource(sourceType, preferredEngine);
     if (!this.isPlaybackRequestActive(playToken, requestedUrl)) {
       return;
@@ -4141,6 +4199,10 @@ export const PlayerController = {
     this.currentPlaybackUrl = "";
     this.currentPlaybackHeaders = {};
     this.currentPlaybackMediaSourceType = null;
+    this.currentPlaybackStreamCandidate = null;
+    this.currentPlaybackTraits = null;
+    this.currentPlaybackCompatibility = null;
+    this.startupDiagnostics = null;
     this.lastKnownDurationSeconds = 0;
     this.playbackEngine = "none";
     this.lastPlaybackErrorCode = 0;

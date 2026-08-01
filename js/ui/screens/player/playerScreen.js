@@ -45,6 +45,11 @@ import {
   isCodecFallbackClassification
 } from "../../../core/player/playbackFailureClassifier.js";
 import { selectCompatibleFallbackSource } from "../../../core/streams/streamFallbackSelector.js";
+import {
+  getCompatibilityLabel,
+  getCompatibilityReasonLabel,
+  getStreamTraitLabels
+} from "../../../core/streams/streamCompatibilityPresentation.js";
 import { metaRepository } from "../../../data/repository/metaRepository.js";
 import { I18n } from "../../../i18n/index.js";
 import { Environment } from "../../../platform/environment.js";
@@ -14794,8 +14799,14 @@ export const PlayerScreen = {
 
   getOrderedStreamCandidates() {
     return (this.streamCandidates || [])
-      .map((stream, index) => ({ stream, index }))
+      .map((stream, index) => ({
+        stream,
+        index,
+        compatibility: this.evaluateSourceCompatibility(stream)
+      }))
       .sort((left, right) => {
+        const compatibilityDifference = compatibilityRank(left.compatibility) - compatibilityRank(right.compatibility);
+        if (compatibilityDifference) return compatibilityDifference;
         const leftOrder = Number(left.stream?.addonOrderIndex ?? Number.MAX_SAFE_INTEGER);
         const rightOrder = Number(right.stream?.addonOrderIndex ?? Number.MAX_SAFE_INTEGER);
         if (leftOrder !== rightOrder) {
@@ -15049,6 +15060,9 @@ export const PlayerScreen = {
           : filtered.map((stream, index) => {
             const focused = this.sourcesFocus.zone === "list" && this.sourcesFocus.index === index;
             const isCurrent = this.streamCandidates[this.currentStreamIndex]?.url === stream.url;
+            const compatibility = this.evaluateSourceCompatibility(stream);
+            const traitLabels = getStreamTraitLabels(compatibility.traits);
+            const compatibilityLabel = getCompatibilityLabel(compatibility);
             const badges = renderPlayerSourceBadges(stream, badgeSettings);
             const topBadges = badgePlacement === "TOP" ? badges : "";
             const bottomBadges = badgePlacement === "BOTTOM" ? badges : "";
@@ -15075,6 +15089,8 @@ export const PlayerScreen = {
                   ${topBadges}
                   ${mainTitle}
                   <div class="player-source-desc">${escapeHtml(stream.description || stream.addonName || "")}</div>
+                  ${traitLabels.length ? `<div class="stream-compatibility-traits">${traitLabels.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}</div>` : ""}
+                  ${compatibilityLabel ? `<div class="stream-compatibility-status ${escapeHtml(compatibility.status)}">${escapeHtml(compatibilityLabel)}</div>` : ""}
                   ${bottomBadges}
                 </div>
                 ${sourceSide}
@@ -15176,6 +15192,14 @@ export const PlayerScreen = {
 
     const selectedStream = list[clamp(index, 0, Math.max(0, list.length - 1))] || null;
     if (selectedStream) {
+      const compatibility = this.evaluateSourceCompatibility(selectedStream);
+      if (compatibility.status === "incompatible") {
+        this.showAspectToast(
+          getCompatibilityReasonLabel(compatibility.reason)
+          || "Nguồn này không tương thích với webOS Player"
+        );
+        return;
+      }
       await this.playStreamCandidate(selectedStream, { preservePlaybackState: true });
     }
   },

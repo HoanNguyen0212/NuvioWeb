@@ -44,6 +44,15 @@ import {
   normalizeStreamBadgeRules
 } from "../../../core/streams/streamBadgeRules.js";
 import { probeWebOsVideoCapabilities } from "../../../platform/webos/webosVideoCapabilities.js";
+import {
+  compatibilityRank,
+  evaluateStreamCompatibility
+} from "../../../core/streams/streamCompatibility.js";
+import {
+  getCompatibilityLabel,
+  getCompatibilityReasonLabel,
+  getStreamTraitLabels
+} from "../../../core/streams/streamCompatibilityPresentation.js";
 
 const STREAM_BADGE_LIMIT = 9;
 const WEBOS_NATIVE_PLAYER_APP_IDS = [
@@ -1555,12 +1564,36 @@ export const StreamScreen = {
     return getOrderedFilterNames(this.sourceChips, this.streams);
   },
 
+  getStreamCompatibilityCapabilities() {
+    return Environment.isWebOS()
+      ? { ...probeWebOsVideoCapabilities(), unsupportedAudioCodecs: ["dts", "truehd"] }
+      : null;
+  },
+
+  evaluateStreamCompatibility(stream) {
+    const capabilities = this.getStreamCompatibilityCapabilities();
+    return capabilities
+      ? evaluateStreamCompatibility(stream, capabilities)
+      : { status: "unknown", reason: "", traits: {} };
+  },
+
+  orderStreamsByCompatibility(streams = []) {
+    if (!Environment.isWebOS()) return streams;
+    return streams
+      .map((stream, index) => ({ stream, index, decision: this.evaluateStreamCompatibility(stream) }))
+      .sort((left, right) => (
+        compatibilityRank(left.decision) - compatibilityRank(right.decision)
+        || left.index - right.index
+      ))
+      .map((entry) => entry.stream);
+  },
+
   getFilteredStreams(filter = this.addonFilter) {
     const orderedStreams = sortStreamsByAddonOrder(this.streams, this.sourceChips);
-    if (filter === "all") {
-      return DebridStreamPresentation.sortForDisplay(orderedStreams, DebridSettingsStore.get());
-    }
-    return orderedStreams.filter((stream) => stream.addonName === filter);
+    const filtered = filter === "all"
+      ? DebridStreamPresentation.sortForDisplay(orderedStreams, DebridSettingsStore.get())
+      : orderedStreams.filter((stream) => stream.addonName === filter);
+    return this.orderStreamsByCompatibility(filtered);
   },
 
   hasPendingSourceLoads(filter = this.addonFilter) {
@@ -2163,6 +2196,9 @@ export const StreamScreen = {
 
   renderStreamCard(stream, index, streamBadgesEnabled = true, badgeSettings = null) {
     const headline = getStreamHeadline(stream);
+    const compatibility = this.evaluateStreamCompatibility(stream);
+    const traitLabels = getStreamTraitLabels(compatibility.traits);
+    const compatibilityLabel = getCompatibilityLabel(compatibility);
     const quality = getStreamQuality(stream);
     const badges = renderStreamBadges(stream, streamBadgesEnabled, badgeSettings);
     const showAddonLogo = badgeSettings?.showAddonLogo === true;
@@ -2208,6 +2244,8 @@ export const StreamScreen = {
             ${topBadges || ""}
             ${!badges ? `<div class="stream-route-card-quality">${escapeHtml(quality)}</div>` : ""}
             ${descriptionLines.map((line, lineIndex) => `<div class="stream-route-card-line${lineIndex > 0 ? " secondary" : ""}">${escapeHtml(line)}</div>`).join("")}
+            ${traitLabels.length ? `<div class="stream-compatibility-traits">${traitLabels.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}</div>` : ""}
+            ${compatibilityLabel ? `<div class="stream-compatibility-status ${escapeHtml(compatibility.status)}">${escapeHtml(compatibilityLabel)}</div>` : ""}
             ${bottomBadges || ""}
           </div>
           ${addonIdentity}
@@ -2378,6 +2416,14 @@ export const StreamScreen = {
     const filtered = this.getFilteredStreams();
     const selected = filtered.find((stream) => stream.id === streamId) || filtered[0];
     if (!selected) {
+      return;
+    }
+    const compatibility = this.evaluateStreamCompatibility(selected);
+    if (compatibility.status === "incompatible") {
+      this.showStreamToast(
+        getCompatibilityReasonLabel(compatibility.reason)
+        || "Nguồn này không tương thích với webOS Player"
+      );
       return;
     }
     const playerStreamCandidates = this.getFilteredStreams();

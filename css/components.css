@@ -21093,3 +21093,38 @@ html.legacy-webos .debug-console-log-frame {
 .legacy-webos .stream-route-card.focused {
   border-color: var(--secondary-color);
 }
+
+.stream-compatibility-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
+.stream-compatibility-traits span {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 0.25rem;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  padding: 0.15rem 0.35rem;
+}
+
+.stream-compatibility-status {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.72rem;
+  line-height: 1.25;
+  margin-top: 0.3rem;
+}
+
+.stream-compatibility-status.incompatible {
+  color: #ff9b9b;
+}
+
+.stream-compatibility-status.unknown {
+  color: #ffd27a;
+}
+
+.stream-compatibility-status.compatible {
+  color: #9fe3b0;
+}

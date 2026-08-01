@@ -97,6 +97,19 @@ test("Dolby Vision and unsupported audio are classified separately", () => {
   assert.equal(audio.reason, "UNSUPPORTED_AUDIO_CODEC");
 });
 
+test("explicit EAC3-only audio is rejected when the selected pipeline probe is unsupported", () => {
+  const decision = evaluateStreamCompatibility({
+    url: "https://example.test/movie.mp4",
+    videoCodec: "AVC",
+    hdrFormat: "SDR",
+    audioCodecs: ["EAC3"]
+  }, {
+    native: { avc: SUPPORT.PROBABLY, eac3: SUPPORT.UNSUPPORTED },
+    mse: { available: SUPPORT.PROBABLY }
+  });
+  assert.equal(decision.reason, "UNSUPPORTED_AUDIO_CODEC");
+});
+
 test("AAC alternative keeps a source from being rejected for an additional TrueHD track", () => {
   const decision = evaluateStreamCompatibility({
     url: "https://example.test/movie.mp4",

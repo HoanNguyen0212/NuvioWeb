@@ -220,11 +220,13 @@ export function parseStreamVideoTraits(stream = {}) {
   const url = stream.url || stream.externalUrl || stream.raw?.url || "";
   const container = detectContainer(allText, url);
   const protocol = detectProtocol(stream, allText);
+  const hasTrustedExplicitHdr = detectHdrFormats(joined(sources.explicit)).length > 0;
+  const hasTrustedParsedHdr = detectHdrFormats(joined(sources.parsed)).length > 0;
   const confidence = codecConflict || hdrConflict
     ? "unknown"
-    : sources.explicit.length && (videoCodec !== "unknown" || hdrFormat !== "unknown") ? "explicit"
-      : sources.parsed.length && (videoCodec !== "unknown" || hdrFormat !== "unknown") ? "parsed"
-        : sources.filename.concat(sources.marketing).length && (videoCodec !== "unknown" || hdrFormat !== "unknown") ? "filename"
+    : codecResult.confidence === "explicit" || hasTrustedExplicitHdr ? "explicit"
+      : codecResult.confidence === "parsed" || hasTrustedParsedHdr ? "parsed"
+        : codecResult.confidence === "filename" || filenameHdr.length ? "filename"
           : "unknown";
 
   return {

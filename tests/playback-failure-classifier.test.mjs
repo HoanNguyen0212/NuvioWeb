@@ -39,6 +39,17 @@ test("classifies explicit Main10 immediate decoder failure separately", () => {
   }), "UNSUPPORTED_HDR_CODEC_OR_PROFILE");
 });
 
+test("runtime code 3 overrides an optimistic probe for explicit Main10 traits", () => {
+  assert.equal(classifyPlaybackFailure({
+    mediaErrorCode: 3,
+    diagnostics: diagnostics({
+      traits: { videoCodec: "hevc", videoProfile: "main10", bitDepth: 10, hdrFormat: "hdr10" }
+    }),
+    capabilityDecision: { status: "compatible", reason: "" },
+    now: startedAt + 1200
+  }), "UNSUPPORTED_HDR_CODEC_OR_PROFILE");
+});
+
 test("classifies unsupported audio without calling it HDR", () => {
   assert.equal(classifyPlaybackFailure({
     mediaErrorCode: 3,

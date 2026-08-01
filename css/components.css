@@ -21097,7 +21097,6 @@ html.legacy-webos .debug-console-log-frame {
 .stream-compatibility-traits {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
   margin-top: 0.35rem;
 }
 
@@ -21107,6 +21106,7 @@ html.legacy-webos .debug-console-log-frame {
   color: rgba(255, 255, 255, 0.86);
   font-size: 0.72rem;
   line-height: 1.2;
+  margin: 0 0.3rem 0.2rem 0;
   padding: 0.15rem 0.35rem;
 }
 

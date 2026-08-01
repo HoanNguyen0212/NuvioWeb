@@ -20,6 +20,11 @@ import {
 } from "../../platform/webos/webosVideoCapabilities.js";
 import { evaluateStreamCompatibility } from "../streams/streamCompatibility.js";
 import { parseStreamVideoTraits } from "../streams/streamVideoTraits.js";
+import {
+  compatibleIndexesAreContiguousFromZero,
+  getLegacyHlsBufferPolicy,
+  pickConservativeInitialLevel
+} from "./legacyStreamingPolicy.js";
 
 const MIN_PROGRESS_SYNC_DURATION_MS = 1000;
 const WEBOS_AUDIO_TRACK_SELECTION_TIMEOUT_MS = 4000;
@@ -2763,12 +2768,7 @@ export const PlayerController = {
     const isWebOs = Platform.isWebOS();
     return {
       autoStartLoad: false,
-      enableWorker: !isWebOs,
-      lowLatencyMode: false,
-      backBufferLength: isWebOs ? 9 : 90,
-      maxBufferLength: isWebOs ? 11 : 30,
-      maxMaxBufferLength: isWebOs ? 15 : 60,
-      maxBufferSize: isWebOs ? 12 * 1024 * 1024 : 60 * 1024 * 1024,
+      ...getLegacyHlsBufferPolicy(isWebOs),
       maxBufferHole: 0.5,
       startFragPrefetch: false,
       fragLoadingTimeOut: isWebOs ? 18000 : 20000,
@@ -2827,22 +2827,7 @@ export const PlayerController = {
   },
 
   pickInitialHlsLevel(levels = [], allowedIndexes = null) {
-    const candidates = Array.isArray(levels) ? levels : [];
-    const allowed = allowedIndexes instanceof Set ? allowedIndexes : null;
-    let selectedIndex = -1;
-    let selectedScore = -1;
-    candidates.forEach((level, index) => {
-      if (allowed && !allowed.has(index)) return;
-      const height = Number(level?.height || 0);
-      const bitrate = Number(level?.bitrate || level?.attrs?.BANDWIDTH || 0);
-      const withinConservativeStart = height <= 0 || height <= 1080;
-      const score = (withinConservativeStart ? 1000000000000 : 0) + (height * 1000000000) + bitrate;
-      if (score > selectedScore) {
-        selectedScore = score;
-        selectedIndex = index;
-      }
-    });
-    return selectedIndex;
+    return pickConservativeInitialLevel(levels, allowedIndexes);
   },
 
   primeHlsInitialLevel(hls, compatibleIndexes = null) {
@@ -2863,13 +2848,23 @@ export const PlayerController = {
     }
     if (allowed?.size) {
       const maxCompatibleIndex = Math.max(...Array.from(allowed));
-      const contiguousFromZero = Array.from({ length: maxCompatibleIndex + 1 })
-        .every((_, index) => allowed.has(index));
+      const contiguousFromZero = compatibleIndexesAreContiguousFromZero(allowed);
       if (contiguousFromZero) {
         try {
           hls.autoLevelCapping = maxCompatibleIndex;
         } catch (_) {
           // Older hls.js builds may not expose an ABR cap.
+        }
+      } else {
+        // A mixed-codec manifest can place an incompatible rendition below a
+        // compatible one. Old hls.js has no public arbitrary-level allowlist;
+        // pinning one compatible level is safer than letting ABR enter it.
+        try {
+          hls.currentLevel = initialLevel;
+          hls.nextLevel = initialLevel;
+          hls.loadLevel = initialLevel;
+        } catch (_) {
+          // The manifest gate still prevents an all-incompatible source.
         }
       }
     }

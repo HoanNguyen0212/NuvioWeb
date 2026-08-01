@@ -49,7 +49,7 @@ function mseEngineForProtocol(protocol) {
   return protocol === "dash" ? "dash.js" : "hls.js";
 }
 
-function audioDecision(traits, capabilities, context) {
+function audioDecision(traits, capabilities, context, pipeline) {
   const unsupported = new Set(
     (context.unsupportedAudioCodecs || capabilities.unsupportedAudioCodecs || [])
       .map((codec) => String(codec || "").toLowerCase())
@@ -57,8 +57,16 @@ function audioDecision(traits, capabilities, context) {
   const codecs = traits.audioCodecs || [];
   if (!codecs.length) return null;
   const normalize = (codec) => codec === "dts-hd" ? "dts" : codec;
-  const supportedKnownTrack = codecs.some((codec) => !unsupported.has(normalize(codec)));
-  const unsupportedTracks = codecs.filter((codec) => unsupported.has(normalize(codec)));
+  const audioProfile = pipeline === "mse" ? (capabilities.mse || {}) : (capabilities.native || {});
+  const capabilityKey = (codec) => ({ aac: "aac", ac3: "ac3", eac3: "eac3" })[codec] || "";
+  const isKnownUnsupported = (codec) => {
+    const normalized = normalize(codec);
+    if (unsupported.has(normalized)) return true;
+    const key = capabilityKey(normalized);
+    return Boolean(key) && audioProfile[key] === SUPPORT.UNSUPPORTED;
+  };
+  const supportedKnownTrack = codecs.some((codec) => !isKnownUnsupported(codec));
+  const unsupportedTracks = codecs.filter((codec) => isKnownUnsupported(codec));
   if (unsupportedTracks.length && !supportedKnownTrack) {
     return { status: "incompatible", severity: "fatal", reason: "UNSUPPORTED_AUDIO_CODEC" };
   }
@@ -116,7 +124,7 @@ export function evaluateStreamCompatibility(stream = {}, capabilities = {}, cont
     }
   }
 
-  const audio = audioDecision(traits, capabilities, context);
+  const audio = audioDecision(traits, capabilities, context, pipeline);
   if (audio) return result(audio.status, audio.severity, audio.reason, preferredEngine, traits, {
     nativeCapability: nativeCodecCapability || SUPPORT.UNKNOWN,
     mseCapability: mseCodecCapability || SUPPORT.UNKNOWN
@@ -156,6 +164,9 @@ export function evaluateStreamCompatibility(stream = {}, capabilities = {}, cont
       : "MISSING_CODEC_METADATA", preferredEngine, traits, diagnostic);
   }
 
+  if (traits.hdrFormat === "unknown-hdr") {
+    return result("unknown", "warning", "UNKNOWN_HDR_COMPATIBILITY", preferredEngine, traits, diagnostic);
+  }
   if (["hdr10plus", "hlg"].includes(traits.hdrFormat)) {
     return result("unknown", "warning", "UNSUPPORTED_HDR_PROFILE", preferredEngine, traits, diagnostic);
   }

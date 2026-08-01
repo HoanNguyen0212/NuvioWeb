@@ -69,6 +69,14 @@ export function classifyPlaybackFailure({
   if (immediateDecode && VIDEO_INCOMPATIBILITY_REASONS.has(reason)) {
     return "UNSUPPORTED_HDR_CODEC_OR_PROFILE";
   }
+  const traits = diagnostics.traits || capabilityDecision?.traits || {};
+  const runtimeCodecProfileFailure = traits.hdrFormat === "dolby-vision"
+    || traits.videoCodec === "av1"
+    || (traits.videoCodec === "vp9" && (traits.videoProfile === "profile2" || Number(traits.bitDepth || 0) >= 10))
+    || (traits.videoCodec === "hevc" && (traits.videoProfile === "main10" || Number(traits.bitDepth || 0) >= 10));
+  if (immediateDecode && runtimeCodecProfileFailure) {
+    return "UNSUPPORTED_HDR_CODEC_OR_PROFILE";
+  }
   if (Number(mediaErrorCode) === 3 && hasPresentedFrame) {
     return "CORRUPT_OR_UNSUPPORTED_FRAGMENT";
   }

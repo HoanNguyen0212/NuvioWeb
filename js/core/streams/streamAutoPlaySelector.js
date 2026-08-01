@@ -33,7 +33,6 @@ export function isRegexSelectionConfigured(regexPattern) {
     return false;
   }
   try {
-    // eslint-disable-next-line no-new
     new RegExp(pattern, "i");
     return true;
   } catch (_) {

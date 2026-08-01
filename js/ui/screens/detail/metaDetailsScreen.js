@@ -21,6 +21,7 @@ import { Platform } from "../../../platform/index.js";
 import { TMDB_API_KEY, TRAKT_API_URL, TRAKT_CLIENT_ID, YOUTUBE_PROXY_URL } from "../../../config.js";
 import { I18n } from "../../../i18n/index.js";
 import { NuvioDialog } from "../../components/nuvioDialog.js";
+import { resolveMovieStreamIdentity } from "./movieStreamIdentity.js";
 import {
   posterItemFromNode,
   PosterOptionsDialogController
@@ -7008,13 +7009,14 @@ export const MetaDetailsScreen = {
     const streamBackdrop =
       this.meta?.background || this.meta?.landscapePoster || this.meta?.poster || null;
     const itemType = resolvePlayableDetailType(this.params?.itemType || this.meta?.type, this.meta);
+    const { itemId, videoId } = resolveMovieStreamIdentity(this.meta, this.params);
     const imdbId = resolveMetaImdbId(this.meta, this.params);
     const tmdbId = resolveMetaTmdbId(this.meta, this.params);
     const traktId = resolveMetaTraktId(this.meta, this.params);
     const contentLanguage = resolveMetaOriginalLanguage(this.meta, this.params);
     this.stopTrailerPlaybackForNavigation();
     Router.navigate("stream", {
-      itemId: this.params?.itemId || null,
+      itemId,
       itemType,
       imdbId,
       tmdbId,
@@ -7032,9 +7034,8 @@ export const MetaDetailsScreen = {
       logo: this.meta?.logo || null,
       parentalWarnings: this.meta?.parentalWarnings || null,
       parentalGuide: this.meta?.parentalGuide || null,
-      videoId: this.params?.itemId || null,
-      preferredStreamId:
-        StreamPreferencesStore.get(this.params?.itemId, this.params?.itemId) || null,
+      videoId,
+      preferredStreamId: StreamPreferencesStore.get(itemId, videoId) || null,
       episodes: [],
       ...extraParams
     }, this.getStreamNavigationOptions());

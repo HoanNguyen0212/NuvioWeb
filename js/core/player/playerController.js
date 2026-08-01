@@ -2765,9 +2765,10 @@ export const PlayerController = {
       autoStartLoad: false,
       enableWorker: !isWebOs,
       lowLatencyMode: false,
-      backBufferLength: isWebOs ? 30 : 90,
-      maxBufferLength: isWebOs ? 18 : 30,
-      maxMaxBufferLength: isWebOs ? 24 : 60,
+      backBufferLength: isWebOs ? 9 : 90,
+      maxBufferLength: isWebOs ? 11 : 30,
+      maxMaxBufferLength: isWebOs ? 15 : 60,
+      maxBufferSize: isWebOs ? 12 * 1024 * 1024 : 60 * 1024 * 1024,
       maxBufferHole: 0.5,
       startFragPrefetch: false,
       fragLoadingTimeOut: isWebOs ? 18000 : 20000,
@@ -2798,14 +2799,44 @@ export const PlayerController = {
     };
   },
 
-  pickInitialHlsLevel(levels = []) {
+  getAdaptiveLevelCodecString(level = {}) {
+    return String(
+      level?.codecSet
+      || level?.codecs
+      || level?.attrs?.CODECS
+      || [level?.videoCodec, level?.audioCodec].filter(Boolean).join(",")
+      || ""
+    ).trim();
+  },
+
+  getCompatibleHlsLevelIndexes(levels = []) {
+    return (Array.isArray(levels) ? levels : []).reduce((indexes, level, index) => {
+      const decision = evaluateStreamCompatibility(
+        this.currentPlaybackStreamCandidate || { url: this.currentPlaybackUrl },
+        this.getPlaybackCapabilities(),
+        {
+          engine: "hls.js",
+          traits: this.currentPlaybackTraits,
+          manifestCodecs: this.getAdaptiveLevelCodecString(level),
+          unsupportedAudioCodecs: this.getWebOsUnsupportedAudioCodecs()
+        }
+      );
+      if (decision.status !== "incompatible") indexes.push(index);
+      return indexes;
+    }, []);
+  },
+
+  pickInitialHlsLevel(levels = [], allowedIndexes = null) {
     const candidates = Array.isArray(levels) ? levels : [];
+    const allowed = allowedIndexes instanceof Set ? allowedIndexes : null;
     let selectedIndex = -1;
     let selectedScore = -1;
     candidates.forEach((level, index) => {
+      if (allowed && !allowed.has(index)) return;
       const height = Number(level?.height || 0);
       const bitrate = Number(level?.bitrate || level?.attrs?.BANDWIDTH || 0);
-      const score = (height * 1000000000) + bitrate;
+      const withinConservativeStart = height <= 0 || height <= 1080;
+      const score = (withinConservativeStart ? 1000000000000 : 0) + (height * 1000000000) + bitrate;
       if (score > selectedScore) {
         selectedScore = score;
         selectedIndex = index;
@@ -2814,8 +2845,9 @@ export const PlayerController = {
     return selectedIndex;
   },
 
-  primeHlsInitialLevel(hls) {
-    const initialLevel = this.pickInitialHlsLevel(hls?.levels);
+  primeHlsInitialLevel(hls, compatibleIndexes = null) {
+    const allowed = Array.isArray(compatibleIndexes) ? new Set(compatibleIndexes) : null;
+    const initialLevel = this.pickInitialHlsLevel(hls?.levels, allowed);
     if (!Number.isFinite(initialLevel) || initialLevel < 0) {
       return -1;
     }
@@ -2828,6 +2860,18 @@ export const PlayerController = {
       hls.nextAutoLevel = initialLevel;
     } catch (_) {
       // Keep ABR enabled even if the hint is unsupported.
+    }
+    if (allowed?.size) {
+      const maxCompatibleIndex = Math.max(...Array.from(allowed));
+      const contiguousFromZero = Array.from({ length: maxCompatibleIndex + 1 })
+        .every((_, index) => allowed.has(index));
+      if (contiguousFromZero) {
+        try {
+          hls.autoLevelCapping = maxCompatibleIndex;
+        } catch (_) {
+          // Older hls.js builds may not expose an ABR cap.
+        }
+      }
     }
     return initialLevel;
   },
@@ -2934,7 +2978,20 @@ export const PlayerController = {
       if (!this.isPlaybackRequestActive(playToken, url)) {
         return;
       }
-      this.primeHlsInitialLevel(hls);
+      const compatibleLevelIndexes = this.getCompatibleHlsLevelIndexes(hls.levels);
+      if (Array.isArray(hls.levels) && hls.levels.length && !compatibleLevelIndexes.length) {
+        this.lastPlaybackErrorCode = 4;
+        this.teardownHlsInstance();
+        this.emitVideoEvent("error", {
+          playbackEngine: "hls.js",
+          mediaErrorCode: 4,
+          hlsErrorType: "mediaError",
+          hlsErrorDetails: "UNSUPPORTED_MSE_CODEC",
+          failureClassification: "UNSUPPORTED_MSE_CODEC"
+        });
+        return;
+      }
+      this.primeHlsInitialLevel(hls, compatibleLevelIndexes);
       try {
         hls.startLoad();
       } catch (_) {
@@ -2971,6 +3028,34 @@ export const PlayerController = {
 
     this.video.removeAttribute("src");
     hls.attachMedia(this.video);
+    return true;
+  },
+
+  selectCompatibleDashVideoTrack(player) {
+    const tracks = player?.getTracksFor?.("video");
+    if (!Array.isArray(tracks) || !tracks.length) return true;
+    const compatibleTracks = tracks.filter((track) => {
+      const codecString = String(track?.codec || track?.codecs || track?.mimeType || "").trim();
+      const decision = evaluateStreamCompatibility(
+        this.currentPlaybackStreamCandidate || { url: this.currentPlaybackUrl },
+        this.getPlaybackCapabilities(),
+        {
+          engine: "dash.js",
+          traits: this.currentPlaybackTraits,
+          manifestCodecs: codecString,
+          unsupportedAudioCodecs: this.getWebOsUnsupportedAudioCodecs()
+        }
+      );
+      return decision.status !== "incompatible";
+    });
+    if (!compatibleTracks.length) return false;
+    const preferred = compatibleTracks.find((track) => /avc1|h264/i.test(String(track?.codec || track?.codecs || "")))
+      || compatibleTracks[0];
+    try {
+      player.setCurrentTrack?.(preferred);
+    } catch (_) {
+      // dash.js can still apply its own supported-track filtering.
+    }
     return true;
   },
 
@@ -3034,7 +3119,19 @@ export const PlayerController = {
         });
       };
       try {
-        player.on?.(dashEvents.STREAM_INITIALIZED, emitTracksChanged);
+        player.on?.(dashEvents.STREAM_INITIALIZED, () => {
+          if (!this.selectCompatibleDashVideoTrack(player)) {
+            this.lastPlaybackErrorCode = 4;
+            this.emitVideoEvent("error", {
+              playbackEngine: "dash.js",
+              mediaErrorCode: 4,
+              dashError: "UNSUPPORTED_MSE_CODEC",
+              failureClassification: "UNSUPPORTED_MSE_CODEC"
+            });
+            return;
+          }
+          emitTracksChanged();
+        });
         player.on?.(dashEvents.TRACK_CHANGE_RENDERED, emitTracksChanged);
         player.on?.(dashEvents.TEXT_TRACKS_ADDED, emitTracksChanged);
         player.on?.(dashEvents.PERIOD_SWITCH_COMPLETED, emitTracksChanged);
@@ -3738,6 +3835,109 @@ export const PlayerController = {
     }
   },
 
+  beginStartupDiagnostics({ sourceCandidate = null, traits = null, capabilityDecision = null } = {}) {
+    const initialTime = Math.max(0, Number(this.video?.currentTime || 0));
+    this.startupDiagnostics = {
+      startedAt: Date.now(),
+      firstFrameAt: 0,
+      firstTimeProgressAt: 0,
+      initialReadyState: Number(this.video?.readyState || 0),
+      initialCurrentTime: initialTime,
+      currentTime: initialTime,
+      hasTimeProgress: false,
+      playbackEngine: this.playbackEngine,
+      sourceId: String(sourceCandidate?.id || sourceCandidate?.infoHash || "").trim(),
+      traits: traits || this.currentPlaybackTraits || null,
+      capabilityDecision: capabilityDecision || this.currentPlaybackCompatibility || null,
+      events: {}
+    };
+    return this.startupDiagnostics;
+  },
+
+  updateStartupDiagnostics(eventName = "") {
+    const diagnostics = this.startupDiagnostics;
+    if (!diagnostics || !this.video) return diagnostics;
+    const now = Date.now();
+    const currentTime = Math.max(0, Number(this.video.currentTime || 0));
+    diagnostics.currentTime = currentTime;
+    diagnostics.playbackEngine = this.playbackEngine;
+    if (eventName) diagnostics.events[eventName] = now;
+    const hasDimensions = Number(this.video.videoWidth || 0) > 0 && Number(this.video.videoHeight || 0) > 0;
+    if (!diagnostics.firstFrameAt && hasDimensions && Number(this.video.readyState || 0) >= 2) {
+      diagnostics.firstFrameAt = now;
+    }
+    if (
+      !diagnostics.firstTimeProgressAt
+      && currentTime > Number(diagnostics.initialCurrentTime || 0) + 0.001
+    ) {
+      diagnostics.firstTimeProgressAt = now;
+      diagnostics.hasTimeProgress = true;
+    }
+    return diagnostics;
+  },
+
+  getStartupDiagnostics() {
+    const diagnostics = this.updateStartupDiagnostics();
+    return diagnostics ? {
+      ...diagnostics,
+      events: { ...(diagnostics.events || {}) },
+      traits: diagnostics.traits ? { ...diagnostics.traits } : null,
+      capabilityDecision: diagnostics.capabilityDecision ? { ...diagnostics.capabilityDecision } : null
+    } : null;
+  },
+
+  redactPlaybackUrl(url = this.currentPlaybackUrl) {
+    try {
+      const parsed = new URL(String(url || ""));
+      const extension = parsed.pathname.match(/\.[a-z0-9]{2,5}$/i)?.[0] || "";
+      return `${parsed.protocol}//${parsed.host}/<redacted>${extension}`;
+    } catch (_) {
+      return "<redacted>";
+    }
+  },
+
+  recordPlaybackFailure(eventDetail = {}, classification = "UNKNOWN_MEDIA_DECODE", fallbackSourceId = "") {
+    const diagnostics = this.getStartupDiagnostics() || {};
+    const traits = diagnostics.traits || this.currentPlaybackTraits || {};
+    const decision = diagnostics.capabilityDecision || this.currentPlaybackCompatibility || {};
+    const video = this.video || {};
+    const report = {
+      sourceId: diagnostics.sourceId || String(this.currentPlaybackStreamCandidate?.id || ""),
+      sourceUrlRedacted: this.redactPlaybackUrl(),
+      protocol: traits.protocol || "unknown",
+      container: traits.container || "unknown",
+      playbackEngine: this.playbackEngine || diagnostics.playbackEngine || "none",
+      videoCodec: traits.videoCodec || "unknown",
+      videoProfile: traits.videoProfile || "unknown",
+      bitDepth: Number(traits.bitDepth || 0),
+      hdrFormat: traits.hdrFormat || "unknown",
+      audioCodecs: Array.isArray(traits.audioCodecs) ? traits.audioCodecs.slice() : [],
+      nativeCapability: decision.nativeCapability || "unknown",
+      mseCapability: decision.mseCapability || "unknown",
+      compatibilityStatus: decision.status || "unknown",
+      compatibilityReason: decision.reason || "",
+      failureClassification: classification,
+      mimeType: this.currentPlaybackMediaSourceType || "",
+      mediaErrorCode: Number(eventDetail.mediaErrorCode || video.error?.code || this.lastPlaybackErrorCode || 0),
+      mediaErrorMessage: String(video.error?.message || ""),
+      readyState: Number(video.readyState || 0),
+      networkState: Number(video.networkState || 0),
+      currentTime: Number(video.currentTime || 0),
+      videoWidth: Number(video.videoWidth || 0),
+      videoHeight: Number(video.videoHeight || 0),
+      hlsErrorType: String(eventDetail.hlsErrorType || ""),
+      hlsErrorDetails: String(eventDetail.hlsErrorDetails || ""),
+      dashError: String(eventDetail.dashError || ""),
+      attemptedEngines: Array.from(this.getAttemptedPlaybackEngines()),
+      fallbackSourceId: String(fallbackSourceId || "")
+    };
+    if (globalThis.__NUVIO_DEBUG_PLAYBACK__) {
+      globalThis.__NUVIO_LAST_PLAYBACK_FAILURE__ = report;
+      console.info("Nuvio playback failure", report);
+    }
+    return report;
+  },
+
   init() {
     this.video = document.getElementById("videoPlayer");
     Platform.prepareVideoElement(this.video);
@@ -3753,6 +3953,10 @@ export const PlayerController = {
       };
       window.addEventListener("resize", this.viewportSyncHandler);
     }
+
+    ["loadedmetadata", "loadeddata", "canplay", "playing", "timeupdate"].forEach((eventName) => {
+      this.video.addEventListener(eventName, () => this.updateStartupDiagnostics(eventName));
+    });
 
     this.video.addEventListener("ended", () => {
       this.isPlaying = false;
@@ -3889,6 +4093,11 @@ export const PlayerController = {
     if (!forceEngine && capabilityDecision?.status === "incompatible") {
       this.currentPlaybackCompatibility = capabilityDecision;
     }
+    this.beginStartupDiagnostics({
+      sourceCandidate: streamCandidate,
+      traits: this.currentPlaybackTraits,
+      capabilityDecision: this.currentPlaybackCompatibility
+    });
     if (preferredEngine === "none" || this.currentPlaybackCompatibility.status === "incompatible") {
       this.lastPlaybackErrorCode = 4;
       this.emitVideoEvent("error", {

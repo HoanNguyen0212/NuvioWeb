@@ -40,6 +40,10 @@ import {
   isSdrAvcFallback
 } from "../../../core/streams/streamCompatibility.js";
 import { parseStreamVideoTraits } from "../../../core/streams/streamVideoTraits.js";
+import {
+  classifyPlaybackFailure,
+  isCodecFallbackClassification
+} from "../../../core/player/playbackFailureClassifier.js";
 import { metaRepository } from "../../../data/repository/metaRepository.js";
 import { I18n } from "../../../i18n/index.js";
 import { Environment } from "../../../platform/environment.js";
@@ -2293,6 +2297,7 @@ export const PlayerScreen = {
     this.silentAudioFallbackCount = 0;
     this.maxSilentAudioFallbackCount = 1;
     this.lastPlaybackErrorAt = 0;
+    this.lastPlaybackFailureClassification = "";
     this.failedPlaybackUrls = new Set();
     this.failedPlaybackStreamIds = new Set();
     this.playbackStallTimer = null;
@@ -4974,6 +4979,8 @@ export const PlayerScreen = {
       detail.hlsErrorType,
       detail.hlsErrorDetails,
       detail.dashError,
+      detail.compatibilityReason,
+      detail.failureClassification,
       detail.playbackEngine
     ]
       .map((value) => String(value || "").trim())
@@ -7839,6 +7846,19 @@ export const PlayerScreen = {
       const avplayError = String(eventDetail?.avplayError || "").toLowerCase();
       const normalizedPlaybackErrorDetail = String(playbackErrorDetail || "").toLowerCase();
       const currentSourceCandidate = this.getStreamCandidateByUrl(this.activePlaybackUrl) || this.getCurrentStreamCandidate();
+      const startupDiagnostics = PlayerController.getStartupDiagnostics?.() || {};
+      const failureClassification = classifyPlaybackFailure({
+        mediaErrorCode,
+        eventDetail,
+        diagnostics: startupDiagnostics,
+        capabilityDecision: PlayerController.currentPlaybackCompatibility || this.evaluateSourceCompatibility(currentSourceCandidate)
+      });
+      this.lastPlaybackFailureClassification = failureClassification;
+      eventDetail.failureClassification = failureClassification;
+      PlayerController.recordPlaybackFailure?.({
+        ...eventDetail,
+        mediaErrorCode
+      }, failureClassification);
       const currentEngineFsState = this.currentEngineFsStream || null;
       const publicEngineFsUrl = String(currentEngineFsState?.publicPlaybackUrl || "").trim();
       const isLocalEngineFsNetworkFailure = currentEngineFsState?.baseUrlKind === "local-service"
@@ -7907,9 +7927,13 @@ export const PlayerScreen = {
         }
 
         this.markPlaybackSourceFailed(this.activePlaybackUrl);
-        const targetEngine = typeof PlayerController.getAlternativePlaybackEngine === "function"
+        const targetEngineCandidate = typeof PlayerController.getAlternativePlaybackEngine === "function"
           ? PlayerController.getAlternativePlaybackEngine(this.activePlaybackUrl)
           : null;
+        const targetEngine = isCodecFallbackClassification(failureClassification)
+          && failureClassification !== "UNSUPPORTED_MSE_CODEC"
+          ? null
+          : targetEngineCandidate;
         if (targetEngine) {
           this.lastPlaybackErrorAt = 0;
           this.loadingVisible = true;
@@ -9850,6 +9874,25 @@ export const PlayerScreen = {
   mediaErrorMessage(errorCode = 0, detail = "", streamCandidate = this.getCurrentStreamCandidate()) {
     const code = Number(errorCode || 0);
     const text = String(detail || "").toLowerCase();
+    const classification = String(this.lastPlaybackFailureClassification || "");
+    if (classification === "UNSUPPORTED_HDR_CODEC_OR_PROFILE") {
+      return "This HDR/10-bit source is not compatible with the selected webOS playback pipeline";
+    }
+    if (classification === "UNSUPPORTED_AUDIO_CODEC") {
+      return "The video format is playable, but this source has no compatible audio track";
+    }
+    if (classification === "UNSUPPORTED_MSE_CODEC") {
+      return "This stream codec is not supported by MediaSource on this TV";
+    }
+    if (classification === "MSE_BUFFER_PRESSURE") {
+      return "MediaSource buffer pressure interrupted playback";
+    }
+    if (classification === "MSE_APPEND_FAILURE") {
+      return "MediaSource could not append a media segment";
+    }
+    if (classification === "CORRUPT_OR_UNSUPPORTED_FRAGMENT") {
+      return "A media segment is corrupt or uses an unsupported format";
+    }
     const httpStatus = extractPlaybackHttpStatus(detail);
     const httpMessage = this.getHttpPlaybackErrorMessage(httpStatus);
     if (httpMessage) {

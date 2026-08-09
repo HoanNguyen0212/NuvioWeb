@@ -1,4 +1,5 @@
 import { Router } from "../../navigation/router.js";
+import { shouldWriteMarkup } from "../renderMarkupGuard.js";
 import { ScreenUtils } from "../../navigation/screen.js";
 import { streamRepository } from "../../../data/repository/streamRepository.js";
 import { addonRepository } from "../../../data/repository/addonRepository.js";
@@ -2343,8 +2344,12 @@ export const StreamScreen = {
         ${this.renderAutoPlayOverlay()}
       </div>
     `;
-    const shellMounted = Boolean(this.container.querySelector(".stream-route-shell"));
-    const didWriteStreamMarkup = !shellMounted || this.renderedMarkup !== nextMarkup;
+    const didWriteStreamMarkup = shouldWriteMarkup(
+      this.container,
+      ".stream-route-shell",
+      this.renderedMarkup,
+      nextMarkup
+    );
 
     if (didWriteStreamMarkup) {
       this.container.innerHTML = nextMarkup;

@@ -1,4 +1,5 @@
 import { Router } from "../../navigation/router.js";
+import { shouldWriteMarkup } from "../renderMarkupGuard.js";
 import { ScreenUtils } from "../../navigation/screen.js";
 import { addonRepository } from "../../../data/repository/addonRepository.js";
 import { catalogRepository } from "../../../data/repository/catalogRepository.js";
@@ -8096,8 +8097,12 @@ export const HomeScreen = {
       </div>
       ${this.renderActiveHoldMenu()}
     `;
-    const shellMounted = Boolean(this.container.querySelector(".home-screen-shell"));
-    const didWriteHomeMarkup = !shellMounted || this.renderedMarkup !== nextMarkup;
+    const didWriteHomeMarkup = shouldWriteMarkup(
+      this.container,
+      ".home-screen-shell",
+      this.renderedMarkup,
+      nextMarkup
+    );
 
     if (didWriteHomeMarkup) {
       this.teardownGridStickyHeader();

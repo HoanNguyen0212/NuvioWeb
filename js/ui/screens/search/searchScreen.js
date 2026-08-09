@@ -30,10 +30,7 @@ import {
   isTitleItemWatched,
   renderTitleWatchedBadge
 } from "../../components/watchedTitleBadge.js";
-import {
-  buildSearchTargets,
-  catalogSupportsExtra
-} from "./searchCatalogTargets.js";
+import { buildSearchTargets } from "./searchCatalogTargets.js";
 
 const POSTER_HOLD_DELAY_MS = 650;
 const SEARCH_RESULTS_PER_ROW_DEFAULT = 18;

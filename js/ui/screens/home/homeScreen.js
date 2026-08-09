@@ -112,6 +112,10 @@ export { escapeAttribute, escapeHtml, formatCatalogRowTitle } from "./homeUtils.
 
 const MODERN_SIDEBAR_PILL_AUTO_COLLAPSE_MS = 4000;
 const CW_RELEASE_ALERT_MAX_AGE_MS = 60 * 24 * 60 * 60 * 1000;
+const HOME_LAZY_IMAGE_SELECTOR =
+  ".home-main .content-poster[data-src], .home-main .home-poster-landscape-logo[data-src], .home-main .home-continue-bg[data-src]";
+const HOME_LAZY_IMAGE_ROW_SELECTOR =
+  ".home-row, .home-modern-row, .home-grid-section, .home-row-continue";
 
 function homePerfNow() {
   return typeof performance !== "undefined" && typeof performance.now === "function"
@@ -1043,9 +1047,14 @@ function parseEpisodeReleaseDateForContinueWatching(released) {
   if (!raw) {
     return null;
   }
-  const exactTime = Date.parse(raw);
-  if (Number.isFinite(exactTime)) {
-    return exactTime;
+  // Old Chromium differs between engines/timezones for non-ISO date strings.
+  // Only an ISO date-time is safe to retain as an exact timestamp; otherwise
+  // fall back to its date portion, if it has one.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw)) {
+    const exactTime = Date.parse(raw);
+    if (Number.isFinite(exactTime)) {
+      return exactTime;
+    }
   }
   const datePortion = raw.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0];
   const parsedTime = datePortion ? Date.parse(datePortion) : NaN;
@@ -7356,10 +7365,30 @@ export const HomeScreen = {
         });
     });
 
+    // A manifest can expose the exact same catalog more than once. Collapse
+    // only descriptors that would produce an identical request: addons can
+    // legitimately reuse catalog IDs when their base URLs differ.
+    const seenCatalogDescriptors = new Set();
+    const uniqueCatalogDescriptors = catalogDescriptors.filter((descriptor) => {
+      const key = JSON.stringify([
+        descriptor.addonBaseUrl || "",
+        descriptor.addonId || "",
+        descriptor.addonName || "",
+        descriptor.catalogId || "",
+        descriptor.catalogName || "",
+        descriptor.type || ""
+      ]);
+      if (seenCatalogDescriptors.has(key)) {
+        return false;
+      }
+      seenCatalogDescriptors.add(key);
+      return true;
+    });
+
     // Seed missing order keys from manifest order before progressive requests
     // can add rows in network-completion order.
     HomeCatalogStore.ensureOrderKeys(
-      catalogDescriptors.map((catalog) =>
+      uniqueCatalogDescriptors.map((catalog) =>
         buildCatalogOrderKey(catalog.addonId, catalog.type, catalog.catalogId)
       )
     );
@@ -7369,7 +7398,7 @@ export const HomeScreen = {
     const currentLang = I18n.getLocale();
     const cachedRowsMap = new Map();
 
-    catalogDescriptors.forEach((desc) => {
+    uniqueCatalogDescriptors.forEach((desc) => {
       const cached = PersistentHomeCache.get(currentProfileId, desc.addonId, desc.type, desc.catalogId, currentLang);
       if (cached && Array.isArray(cached.items) && cached.items.length > 0) {
         const homeCatalogKey = buildCatalogOrderKey(desc.addonId, desc.type, desc.catalogId);
@@ -7410,8 +7439,8 @@ export const HomeScreen = {
     }
 
     const initialCatalogLoad = this.getInitialCatalogLoadCount();
-    const initialDescriptors = catalogDescriptors.slice(0, initialCatalogLoad);
-    const deferredDescriptors = catalogDescriptors.slice(initialCatalogLoad);
+    const initialDescriptors = uniqueCatalogDescriptors.slice(0, initialCatalogLoad);
+    const deferredDescriptors = uniqueCatalogDescriptors.slice(initialCatalogLoad);
 
     const progressiveInitialRows = new Map();
     const initialRows = await this.fetchCatalogRows(initialDescriptors, {
@@ -7969,8 +7998,6 @@ export const HomeScreen = {
     const effectiveContinueWatchingLoadingCount = (this.continueWatchingLoading && continueWatchingLoadingCount === 0)
       ? loadingRowItemCount
       : continueWatchingLoadingCount;
-    this.teardownGridStickyHeader();
-
     let mainContentMarkup = "";
     let modernLayoutPayload = null;
 
@@ -8051,7 +8078,7 @@ export const HomeScreen = {
       this.sidebarExpanded && retainedFocusState?.focusKind === "sidebar"
     );
 
-    this.container.innerHTML = `
+    const nextMarkup = `
       <div class="home-shell home-screen-shell ${layoutClass}"${sizingStyle ? ` style="${escapeAttribute(sizingStyle)}"` : ""}>
         ${renderRootSidebar({
       selectedRoute: "home",
@@ -8069,29 +8096,36 @@ export const HomeScreen = {
       </div>
       ${this.renderActiveHoldMenu()}
     `;
+    const shellMounted = Boolean(this.container.querySelector(".home-screen-shell"));
+    const didWriteHomeMarkup = !shellMounted || this.renderedMarkup !== nextMarkup;
 
-    const fastHome = globalThis.NuvioLegacyFastHome;
-    if (fastHome && typeof fastHome.optimize === "function") {
-      fastHome.optimize(this.container.querySelector(".home-screen-shell"));
-    }
+    if (didWriteHomeMarkup) {
+      this.teardownGridStickyHeader();
+      this.teardownModernTrackScrollPagination();
+      this.container.innerHTML = nextMarkup;
+      this.renderedMarkup = nextMarkup;
 
-    if (modernLandscapePostersEnabled) {
-      this.applyCachedModernLandscapePosterMetrics(this.container.querySelector(".home-screen-shell.home-modern-landscape-posters"));
-    } else if (this.layoutMode === "modern") {
-      this.applyCachedModernPortraitPosterMetrics(this.container.querySelector(".home-screen-shell.home-layout-modern:not(.home-modern-landscape-posters)"));
+      const fastHome = globalThis.NuvioLegacyFastHome;
+      if (fastHome && typeof fastHome.optimize === "function") {
+        fastHome.optimize(this.container.querySelector(".home-screen-shell"));
+      }
+      if (modernLandscapePostersEnabled) {
+        this.applyCachedModernLandscapePosterMetrics(this.container.querySelector(".home-screen-shell.home-modern-landscape-posters"));
+      } else if (this.layoutMode === "modern") {
+        this.applyCachedModernPortraitPosterMetrics(this.container.querySelector(".home-screen-shell.home-layout-modern:not(.home-modern-landscape-posters)"));
+      }
+      bindRootSidebarEvents(this.container, {
+        currentRoute: "home",
+        onSelectedAction: () => this.closeSidebarToContent(),
+        onExpandSidebar: () => this.openSidebar()
+      });
+      this.buildNavigationModel();
+      this.bindHomeViewportEvents();
+      if (this.layoutMode === "modern") {
+        this.setupModernTrackScrollPagination();
+      }
     }
-    bindRootSidebarEvents(this.container, {
-      currentRoute: "home",
-      onSelectedAction: () => this.closeSidebarToContent(),
-      onExpandSidebar: () => this.openSidebar()
-    });
     this.scheduleModernSidebarPillAutoCollapse();
-
-    this.buildNavigationModel();
-    this.bindHomeViewportEvents();
-    if (this.layoutMode === "modern") {
-      this.setupModernTrackScrollPagination();
-    }
     const canAttemptRestore = Boolean(retainedFocusState);
     let restoredFocus = false;
     if (sidebarFocusLocked) {
@@ -8181,7 +8215,7 @@ export const HomeScreen = {
     if (!this.layoutPrefs?.modernSidebar) {
       this.setSidebarExpanded(false);
     }
-    if (this.layoutMode === "grid") {
+    if (didWriteHomeMarkup && this.layoutMode === "grid") {
       this.setupGridStickyHeader(showHeroSection);
     }
     this.startHeroRotation();
@@ -8192,12 +8226,13 @@ export const HomeScreen = {
     this.renderedLayoutMode = this.layoutMode;
     this.ensureHomeTruncationObservers();
     this.scheduleHomeTruncationUpdate();
-    this.scheduleHomeLazyImageHydration();
+    this.scheduleHomeLazyImageHydration(null, { refreshIndex: didWriteHomeMarkup });
     this.scheduleReturnFocusRestore();
     const mountedRows = Number(this.navModel?.rows?.length || 0);
     const mountedCards = Number((this.navModel?.rows || []).reduce((total, rowNodes) => total + rowNodes.length, 0));
     logHomePerf("render", {
       ms: Number((homePerfNow() - renderStart).toFixed(2)),
+      domWrite: didWriteHomeMarkup,
       layoutMode: this.layoutMode,
       rows: Number(this.rows?.length || 0),
       mountedRows,
@@ -8207,54 +8242,63 @@ export const HomeScreen = {
     });
   },
 
-  scheduleHomeLazyImageHydration(anchorNode = null) {
+  scheduleHomeLazyImageHydration(anchorNode = null, { refreshIndex = false } = {}) {
     if (anchorNode instanceof HTMLElement) {
       this.pendingHomeLazyImageAnchor = anchorNode;
     }
-    if (this.modernVerticalFastScrollState) {
-      return;
+    if (refreshIndex) {
+      this.homeLazyImageHydrationNeedsIndexRefresh = true;
     }
-    if (this.homeLazyImageHydrationRaf) {
+    if (this.modernVerticalFastScrollState || this.homeLazyImageHydrationRaf) {
       return;
     }
     this.homeLazyImageHydrationRaf = requestAnimationFrame(() => {
       this.homeLazyImageHydrationRaf = 0;
       const anchor = this.pendingHomeLazyImageAnchor || this.getCurrentFocusedNode();
+      const shouldRefreshIndex = Boolean(this.homeLazyImageHydrationNeedsIndexRefresh);
       this.pendingHomeLazyImageAnchor = null;
-      this.hydrateHomeLazyImages(anchor);
+      this.homeLazyImageHydrationNeedsIndexRefresh = false;
+      this.hydrateHomeLazyImages(anchor, { refreshIndex: shouldRefreshIndex });
     });
   },
 
-  hydrateHomeLazyImages(anchorNode = null) {
+  buildHomeLazyImageHydrationIndex() {
+    if (!this.container) {
+      this.homeLazyImageHydrationIndex = null;
+      return [];
+    }
+    const imagesByRow = new Map();
+    Array.from(this.container.querySelectorAll(HOME_LAZY_IMAGE_SELECTOR)).forEach((image) => {
+      const row = image.closest(HOME_LAZY_IMAGE_ROW_SELECTOR);
+      const rowImages = imagesByRow.get(row) || [];
+      rowImages.push(image);
+      imagesByRow.set(row, rowImages);
+    });
+    this.homeLazyImageHydrationIndex = Array.from(imagesByRow, ([row, images]) => ({ row, images }));
+    return this.homeLazyImageHydrationIndex;
+  },
+
+  hydrateHomeLazyImages(anchorNode = null, { refreshIndex = false } = {}) {
     if (!this.container) {
       return;
     }
-    const images = Array.from(
-      this.container.querySelectorAll(
-        ".home-main .content-poster[data-src], .home-main .home-poster-landscape-logo[data-src], .home-main .home-continue-bg[data-src]"
-      )
-    );
-    if (!images.length) {
+    const imageRows = refreshIndex || !Array.isArray(this.homeLazyImageHydrationIndex)
+      ? this.buildHomeLazyImageHydrationIndex()
+      : this.homeLazyImageHydrationIndex;
+    if (!imageRows.length) {
       return;
     }
     const viewport = this.container.querySelector(".home-modern-rows-viewport")
       || this.container.querySelector(".home-main")
       || this.container;
     const viewportRect = viewport.getBoundingClientRect();
-    const anchorRow = anchorNode?.closest?.(
-      ".home-row, .home-modern-row, .home-grid-section, .home-row-continue"
-    ) || null;
+    const anchorRow = anchorNode?.closest?.(HOME_LAZY_IMAGE_ROW_SELECTOR) || null;
     const verticalMargin = Platform.isWebOS() || Platform.isTizen() ? 720 : 1200;
     const horizontalMargin = Platform.isWebOS() || Platform.isTizen() ? 520 : 1000;
-    const rowSelector = ".home-row, .home-modern-row, .home-grid-section, .home-row-continue";
-    const imagesByRow = new Map();
-    images.forEach((image) => {
-      const row = image.closest(rowSelector);
-      const rowImages = imagesByRow.get(row) || [];
-      rowImages.push(image);
-      imagesByRow.set(row, rowImages);
-    });
-    imagesByRow.forEach((rowImages, row) => {
+    imageRows.forEach(({ row, images }) => {
+      if (row instanceof HTMLElement && !row.isConnected) {
+        return;
+      }
       const shouldHydrateFocusedRow = Boolean(anchorRow && row === anchorRow);
       if (!shouldHydrateFocusedRow && row instanceof HTMLElement) {
         const rowRect = row.getBoundingClientRect();
@@ -8265,8 +8309,8 @@ export const HomeScreen = {
           return;
         }
       }
-      rowImages.forEach((image) => {
-        if (!(image instanceof HTMLImageElement)) {
+      images.forEach((image) => {
+        if (!(image instanceof HTMLImageElement) || !image.isConnected) {
           return;
         }
         const src = String(image.dataset.src || "").trim();
@@ -8285,9 +8329,8 @@ export const HomeScreen = {
             return;
           }
         }
-        // The app already decides when an image is close enough to load. Leaving
-        // loading="lazy" here delegates that decision back to old TV browsers,
-        // which can miscalculate visibility inside the nested modern-home viewport.
+        // Loading remains demand-driven; Chromium 53 miscalculates native lazy
+        // visibility inside the nested modern-home viewport.
         image.loading = "eager";
         image.removeAttribute("data-src");
         image.src = src;
@@ -9591,6 +9634,9 @@ export const HomeScreen = {
       this.homeLazyImageHydrationRaf = 0;
     }
     this.pendingHomeLazyImageAnchor = null;
+    this.homeLazyImageHydrationNeedsIndexRefresh = false;
+    this.homeLazyImageHydrationIndex = null;
+    this.renderedMarkup = null;
     this.lastDirectionalKeyAtByDirection = {};
     this.homeTruncationScope = null;
     if (this.boundHomeEventContainer) {

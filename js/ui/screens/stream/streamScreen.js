@@ -963,6 +963,8 @@ export const StreamScreen = {
     this.addonLogoLookup = {};
     this.addonFilter = "all";
     this.hasRenderedStreamRouteShell = false;
+    this.renderedMarkup = null;
+    this.boundStreamListNode = null;
     // Returning here from the player is a back navigation, not a fresh open, so
     // do not auto-resume or auto-play again. Otherwise exiting the player drops
     // back onto the stream list and immediately relaunches, looping forever.
@@ -1054,11 +1056,18 @@ export const StreamScreen = {
       }
     }
 
+    // A restored source snapshot is already complete. Settling loading before
+    // its first paint avoids parsing, layout and painting the same long list
+    // twice when returning from Player.
+    const restoringFromBack = Boolean(
+      restored && navigationContext?.isBackNavigation && this.streams.length
+    );
+    if (restoringFromBack) {
+      this.loading = false;
+    }
     this.render();
 
-    if (restored && navigationContext?.isBackNavigation && this.streams.length) {
-      this.loading = false;
-      this.render();
+    if (restoringFromBack) {
       return;
     }
 
@@ -2321,7 +2330,7 @@ export const StreamScreen = {
           </section>
         </div>`;
 
-    this.container.innerHTML = `
+    const nextMarkup = `
       <div class="stream-route-shell${shellStableClass}">
         <div class="stream-route-backdrop"${backdrop ? ` style="background-image:url('${String(backdrop).replace(/'/g, "%27")}')"` : ""}></div>
         <div class="stream-route-backdrop-dim"></div>
@@ -2332,20 +2341,28 @@ export const StreamScreen = {
         ${this.renderAutoPlayOverlay()}
       </div>
     `;
+    const shellMounted = Boolean(this.container.querySelector(".stream-route-shell"));
+    const didWriteStreamMarkup = !shellMounted || this.renderedMarkup !== nextMarkup;
 
-    this.bindAddonLogoFallbacks();
-    ScreenUtils.indexFocusables(this.container);
+    if (didWriteStreamMarkup) {
+      this.container.innerHTML = nextMarkup;
+      this.renderedMarkup = nextMarkup;
+      this.boundStreamListNode = null;
+      this.bindAddonLogoFallbacks();
+      ScreenUtils.indexFocusables(this.container);
+      this.bindListScrollState();
+    }
     this.restoreScrollPosition();
     this.applyFocus();
-    this.bindListScrollState();
     this.hasRenderedStreamRouteShell = true;
   },
 
   bindListScrollState() {
     const list = this.container?.querySelector(".stream-route-list");
-    if (!list) {
+    if (!list || this.boundStreamListNode === list) {
       return;
     }
+    this.boundStreamListNode = list;
     list.addEventListener(
       "scroll",
       () => {
@@ -2773,6 +2790,8 @@ export const StreamScreen = {
       this.releaseImageProxyReadyListener();
       this.releaseImageProxyReadyListener = null;
     }
+    this.renderedMarkup = null;
+    this.boundStreamListNode = null;
     ScreenUtils.hide(this.container);
   }
 };

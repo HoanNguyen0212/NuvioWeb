@@ -450,6 +450,34 @@ async function runWebpack(config) {
   });
 }
 
+async function enforceLegacyChunkSyntax() {
+  // Webpack's production minimizer can preserve/re-introduce newer syntax
+  // after loader transforms. Re-run every emitted app and lazy chunk through
+  // the Chromium 53 target so a route first opened after boot remains parsable.
+  const esbuild = (await import("esbuild-wasm")).default;
+  const directories = [distDir, path.join(distDir, "chunks")];
+  let transformedCount = 0;
+  for (const directory of directories) {
+    const entries = await readdir(directory).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.endsWith(".js")) {
+        continue;
+      }
+      const filePath = path.join(directory, entry);
+      const source = await readFile(filePath, "utf8");
+      const transformed = await esbuild.transform(source, {
+        loader: "js",
+        target: `chrome${compatibilityPolicy.chromiumVersion}`,
+        minify: !debugBundle,
+        legalComments: "none"
+      });
+      await writeFile(filePath, transformed.code, "utf8");
+      transformedCount += 1;
+    }
+  }
+  console.log(`verified legacy syntax in ${transformedCount} emitted JS assets`);
+}
+
 async function buildBundle() {
   const { version } = await readAppMetadata();
 
@@ -511,6 +539,7 @@ async function buildBundle() {
     performance: { hints: false },
     stats: "errors-warnings"
   });
+  await enforceLegacyChunkSyntax();
   if (emitBuildMetafile) {
     const reportDir = path.join(rootDir, ".cache", "legacy-analysis");
     await mkdir(reportDir, { recursive: true });

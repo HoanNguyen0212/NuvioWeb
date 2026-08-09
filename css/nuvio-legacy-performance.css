@@ -257,6 +257,12 @@ html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-options-rail
   left: 388px !important;
   width: 560px !important;
 }
+/* An external subtitle option has a source chip plus two text lines. The
+   generic 64px item height clips that 89px block on Chromium 53, causing the
+   next option to paint over it. Leave room for the complete option instead. */
+html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-options-rail .player-dialog-item {
+  min-height: 118px !important;
+}
 html.nuvio-legacy-low-power .player-subtitle-modal .player-subtitle-style-rail {
   left: 976px !important;
   width: 472px !important;

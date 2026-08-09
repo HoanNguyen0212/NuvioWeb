@@ -2346,11 +2346,22 @@ export const MetaDetailsScreen = {
   },
 
   getStreamNavigationOptions() {
-    // Continue Watching mounts Detail only to resolve the Stream target.
-    return this.params?.autoOpenContinueWatching ? { skipStackPush: true } : {};
+    // Continue Watching's transient Detail entry must not resurface after a
+    // later Home navigation.
+    return this.params?.autoOpenContinueWatching
+      ? { skipStackPush: true, replaceHistory: true }
+      : {};
   },
 
   navigateBackFromDetail() {
+    if (this.params?.returnToSearchOnBack) {
+      Router.navigate("search", {}, {
+        isBackNavigation: true,
+        skipStackPush: true,
+        replaceHistory: true
+      });
+      return true;
+    }
     if (this.params?.returnHomeOnBack) {
       Router.navigate(
         "home",
@@ -6975,6 +6986,7 @@ export const MetaDetailsScreen = {
       traktId,
       contentLanguage,
       originalItemId: this.params?.originalItemId || null,
+      returnToSearchOnBack: Boolean(this.params?.returnToSearchOnBack),
       returnToDetail: true,
       fromDetailRoute: true,
       itemTitle: this.meta?.name || this.params?.fallbackTitle || this.params?.itemId || "Untitled",
@@ -7023,6 +7035,7 @@ export const MetaDetailsScreen = {
       traktId,
       contentLanguage,
       originalItemId: this.params?.originalItemId || null,
+      returnToSearchOnBack: Boolean(this.params?.returnToSearchOnBack),
       returnToDetail: true,
       fromDetailRoute: true,
       itemTitle: this.meta?.name || this.params?.fallbackTitle || this.params?.itemId || "Untitled",

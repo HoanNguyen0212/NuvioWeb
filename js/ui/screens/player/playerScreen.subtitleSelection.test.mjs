@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { PlayerController } from "../../../core/player/playerController.js";
-import { Router } from "../../navigation/router.js";
-
-const PlayerScreen = Router.routes.player;
+import { PlayerScreen } from "./playerScreen.js";
 
 function deferred() {
   let resolve;

@@ -33,6 +33,7 @@ import { StreamBadgeSettingsStore } from "../../../data/local/streamBadgeSetting
 import { TorrentSettingsStore } from "../../../data/local/torrentSettingsStore.js";
 import { WebOsAudioCompatibilityStore } from "../../../data/local/webOsAudioCompatibilityStore.js";
 import { matchStreamBadges } from "../../../core/streams/streamBadgeRules.js";
+import { hasReleaseToken } from "../../../core/streams/releaseToken.js";
 import { selectAutoPlayStream } from "../../../core/streams/streamAutoPlaySelector.js";
 import { metaRepository } from "../../../data/repository/metaRepository.js";
 import { I18n } from "../../../i18n/index.js";
@@ -6104,6 +6105,10 @@ export const PlayerScreen = {
 
   buildDetailRouteParamsFromPlayer() {
     const itemType = normalizeItemType(this.params?.itemType || "movie");
+    const streamRouteParams =
+      this.params?.streamRouteParams && typeof this.params.streamRouteParams === "object"
+        ? this.params.streamRouteParams
+        : null;
     const currentEpisode = itemType === "series" ? this.resolveCurrentEpisodeEntry() : null;
     const preferredSeason = itemType === "series"
       ? Number(this.params?.season ?? currentEpisode?.season ?? 0)
@@ -6115,6 +6120,9 @@ export const PlayerScreen = {
       imdbId: this.params?.imdbId || null,
       tmdbId: this.params?.tmdbId || this.params?.tmdb_id || null,
       traktId: this.params?.traktId || this.params?.trakt_id || null,
+      returnToSearchOnBack: Boolean(
+        this.params?.returnToSearchOnBack || streamRouteParams?.returnToSearchOnBack
+      ),
       preferredSeason: Number.isFinite(preferredSeason) && preferredSeason > 0 ? preferredSeason : null
     };
   },
@@ -17196,8 +17204,8 @@ export const PlayerScreen = {
 
         if (text.includes("web")) score += 8;
         if (text.includes("bluray")) score += 8;
-        if (text.includes("cam")) score -= 70;
-        if (text.includes("ts")) score -= 40;
+        if (hasReleaseToken(text, "cam")) score -= 70;
+        if (hasReleaseToken(text, "ts")) score -= 40;
 
         if (text.includes("hevc") || text.includes("h265") || text.includes("x265")) {
           score += supports("mp4Hevc", true) || supports("mp4HevcMain10", true) ? 12 : -90;
@@ -17216,10 +17224,18 @@ export const PlayerScreen = {
           score += supports("webmVp9", true) ? 6 : -45;
         }
 
-        if (text.includes("hdr") || text.includes("hdr10") || text.includes("hlg")) {
+        if (
+          hasReleaseToken(text, "hdr") ||
+          hasReleaseToken(text, "hdr10") ||
+          hasReleaseToken(text, "hlg")
+        ) {
           score += supports("hdrLikely", true) ? 16 : -35;
         }
-        if (text.includes("dolby vision") || text.includes(" dv ")) {
+        if (
+          text.includes("dolby vision") ||
+          hasReleaseToken(text, "dv") ||
+          hasReleaseToken(text, "dovi")
+        ) {
           score += supports("dolbyVision", true) ? 18 : -45;
         }
         if (text.includes("atmos") || text.includes("eac3") || text.includes("ec-3")) {

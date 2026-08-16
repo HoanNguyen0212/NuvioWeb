@@ -2020,6 +2020,24 @@ function uniqueNonEmptyValues(values = []) {
   return unique;
 }
 
+export function releasePlayerDomFocus(container, activeElement = document.activeElement) {
+  if (
+    !container ||
+    !activeElement ||
+    typeof container.contains !== "function" ||
+    !container.contains(activeElement) ||
+    typeof activeElement.blur !== "function"
+  ) {
+    return false;
+  }
+  try {
+    activeElement.blur();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 export const PlayerScreen = {
 
   async mount(params = {}) {
@@ -17325,8 +17343,9 @@ export const PlayerScreen = {
     this.dismissPauseOverlay();
     this.updateLoadingVisibility();
     this.updateMediaSessionPlaybackState();
-    this.setControlsVisible(true, { focus: false });
-    this.renderControlButtons();
+    // A completed movie remains on the Player route. Move focus away from the
+    // hidden progress/root target so the next D-pad key has a visible control.
+    this.setControlsVisible(true, { focus: true });
     this.renderNextEpisodeCard();
     this.updateUiTick();
   },
@@ -17453,6 +17472,10 @@ export const PlayerScreen = {
       // throws during cleanup and aborts the route navigation).
       try { PlayerController.stop(); } catch (_) {}
       try {
+        // Chromium 53 can retain focus on a player control after that control
+        // is detached. Release it before removing the Player DOM; the restored
+        // route can then apply its own saved focus normally.
+        releasePlayerDomFocus(this.container);
         if (this.container) {
           this.container.style.display = "none";
           this.container.querySelector("#playerUiRoot")?.remove();

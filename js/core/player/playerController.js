@@ -17,6 +17,8 @@ import { loadStreamingLibs } from "../../runtime/loadStreamingLibs.js";
 
 const MIN_PROGRESS_SYNC_DURATION_MS = 1000;
 const WEBOS_AUDIO_TRACK_SELECTION_TIMEOUT_MS = 4000;
+const HLS_TRANSIENT_LEVEL_404_RETRY_LIMIT = 2;
+const HLS_TRANSIENT_LEVEL_404_RETRY_BASE_DELAY_MS = 1500;
 
 function logEngineFsDebug(...args) {
   if (globalThis.__NUVIO_DEBUG_ENGINEFS__) {
@@ -2828,6 +2830,48 @@ export const PlayerController = {
     this.playbackEngine = "hls.js";
     let networkRecoveryAttempts = 0;
     let mediaRecoveryAttempts = 0;
+    let transientLevelNotFoundRetries = 0;
+    let transientLevelNotFoundRetryTimer = null;
+
+    const clearTransientLevelNotFoundRetry = () => {
+      if (transientLevelNotFoundRetryTimer) {
+        clearTimeout(transientLevelNotFoundRetryTimer);
+        transientLevelNotFoundRetryTimer = null;
+      }
+    };
+
+    const scheduleTransientLevelNotFoundRetry = () => {
+      transientLevelNotFoundRetries += 1;
+      const retryAttempt = transientLevelNotFoundRetries;
+      const retryDelayMs = HLS_TRANSIENT_LEVEL_404_RETRY_BASE_DELAY_MS * retryAttempt;
+      clearTransientLevelNotFoundRetry();
+      console.warn("[Nuvio playback] retrying transient HLS level 404", {
+        attempt: retryAttempt,
+        limit: HLS_TRANSIENT_LEVEL_404_RETRY_LIMIT,
+        delayMs: retryDelayMs
+      });
+      transientLevelNotFoundRetryTimer = setTimeout(() => {
+        transientLevelNotFoundRetryTimer = null;
+        if (!this.isPlaybackRequestActive(playToken, url) || this.hlsInstance !== hls) {
+          return;
+        }
+        try {
+          // Bridge-generated level URLs can be temporarily unavailable while
+          // a live HLS window advances. Reload the master manifest, bounded.
+          hls.loadSource(url);
+        } catch (error) {
+          console.warn("HLS level 404 retry failed", error);
+          this.lastPlaybackErrorCode = 2;
+          this.teardownHlsInstance();
+          this.emitVideoEvent("error", {
+            playbackEngine: "hls.js",
+            mediaErrorCode: 2,
+            hlsErrorType: "networkError",
+            hlsErrorDetails: "levelLoadError"
+          });
+        }
+      }, retryDelayMs);
+    };
 
     hls.on(Hls.Events.ERROR, (_, data = {}) => {
       if (!this.isPlaybackRequestActive(playToken, url)) {
@@ -2837,7 +2881,17 @@ export const PlayerController = {
         return;
       }
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        const responseCode = Number(data?.response?.code || data?.networkDetails?.status || 0);
+        if (
+          String(data?.details || "") === "levelLoadError" &&
+          responseCode === 404 &&
+          transientLevelNotFoundRetries < HLS_TRANSIENT_LEVEL_404_RETRY_LIMIT
+        ) {
+          scheduleTransientLevelNotFoundRetry();
+          return;
+        }
         if (networkRecoveryAttempts >= 1) {
+          clearTransientLevelNotFoundRetry();
           this.lastPlaybackErrorCode = 2;
           this.teardownHlsInstance();
           this.emitVideoEvent("error", {
@@ -2884,6 +2938,11 @@ export const PlayerController = {
         hlsErrorType: String(data.type || ""),
         hlsErrorDetails: String(data.details || "")
       });
+    });
+
+    hls.on(Hls.Events.LEVEL_LOADED, () => {
+      clearTransientLevelNotFoundRetry();
+      transientLevelNotFoundRetries = 0;
     });
 
     hls.on(Hls.Events.MEDIA_ATTACHED, () => {

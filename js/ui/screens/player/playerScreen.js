@@ -17411,8 +17411,14 @@ const startupMediaErrorCode = Number(PlayerController.getLastPlaybackErrorCode?.
     this.dismissPauseOverlay();
     this.updateLoadingVisibility();
     this.updateMediaSessionPlaybackState();
-    this.setControlsVisible(true, { focus: false });
-    this.renderControlButtons();
+    // A completed movie keeps the Player route open. Give the D-pad a known
+    // target rather than leaving it on a hidden root/old progress shell; legacy
+    // webOS can otherwise retain the detached native focus after playback ends.
+    this.stickyProgressFocus = false;
+    this.autoHideControlsAfterSeek = false;
+    this.controlFocusZone = "buttons";
+    this.controlFocusIndex = 0;
+    this.setControlsVisible(true, { focus: true });
     this.renderNextEpisodeCard();
     this.updateUiTick();
   },
@@ -17539,6 +17545,17 @@ const startupMediaErrorCode = Number(PlayerController.getLastPlaybackErrorCode?.
       // throws during cleanup and aborts the route navigation).
       try { PlayerController.stop(); } catch (_) {}
       try {
+        const activeElement = document.activeElement;
+        // Chromium 53 may keep document.activeElement pointing at a removed
+        // player control. Blur it before the player DOM is discarded so the
+        // route restored after Back receives D-pad events/focus normally.
+        if (
+          activeElement &&
+          this.container?.contains?.(activeElement) &&
+          typeof activeElement.blur === "function"
+        ) {
+          activeElement.blur();
+        }
         if (this.container) {
           this.container.style.display = "none";
           this.container.querySelector("#playerUiRoot")?.remove();

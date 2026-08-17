@@ -42,6 +42,12 @@
         ? "ragmehos."
         : existing.SPONSOR_NAMES,
     TMDB_API_KEY: typeof existing.TMDB_API_KEY === "undefined" ? "" : existing.TMDB_API_KEY,
+    MDBLIST_API_KEY:
+      typeof existing.MDBLIST_API_KEY === "undefined" ? "" : existing.MDBLIST_API_KEY,
+    MDBLIST_API_BASE_URL:
+      typeof existing.MDBLIST_API_BASE_URL === "undefined"
+        ? "https://api.mdblist.com/"
+        : existing.MDBLIST_API_BASE_URL,
     TRAKT_CLIENT_ID:
       typeof existing.TRAKT_CLIENT_ID === "undefined" ? "" : existing.TRAKT_CLIENT_ID,
     TRAKT_CLIENT_SECRET:

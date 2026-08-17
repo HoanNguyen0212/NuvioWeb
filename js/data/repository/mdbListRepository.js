@@ -1,4 +1,4 @@
-import { MDBLIST_API_BASE_URL } from "../../config.js";
+import { MDBLIST_API_BASE_URL, MDBLIST_API_KEY } from "../../config.js";
 import { MdbListSettingsStore } from "../local/mdbListSettingsStore.js";
 import { TmdbService } from "../../core/tmdb/tmdbService.js";
 
@@ -58,6 +58,10 @@ function extractTmdbId(rawId) {
 
 function firstNonEmpty(...values) {
   return values.map((value) => String(value || "").trim()).find(Boolean) || "";
+}
+
+function resolveApiKey(settings = {}) {
+  return String(MDBLIST_API_KEY || settings.apiKey || "").trim();
 }
 
 function enabledProviders(settings = {}) {
@@ -233,7 +237,7 @@ export const mdbListRepository = {
     if (!settings.enabled) {
       return null;
     }
-    const apiKey = String(settings.apiKey || "").trim();
+    const apiKey = resolveApiKey(settings);
     if (!apiKey) {
       return null;
     }
@@ -266,7 +270,7 @@ export const mdbListRepository = {
     if (!settings.enabled) {
       return null;
     }
-    const apiKey = String(settings.apiKey || "").trim();
+    const apiKey = resolveApiKey(settings);
     if (!apiKey) {
       return null;
     }

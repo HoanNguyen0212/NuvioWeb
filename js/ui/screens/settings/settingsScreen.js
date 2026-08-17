@@ -60,6 +60,7 @@ import { PluginManager } from "../../../core/player/pluginManager.js";
 import { QrCodeGenerator } from "../../../core/qr/qrCodeGenerator.js";
 import { TraktAuthService } from "../../../data/repository/traktAuthService.js";
 import { mdbListRepository } from "../../../data/repository/mdbListRepository.js";
+import { MDBLIST_API_KEY, TMDB_API_KEY } from "../../../config.js";
 import {
   getStreamBadgePreviewSections,
   normalizeStreamBadgeChipColor,
@@ -4344,6 +4345,21 @@ export const SettingsScreen = {
               subtitle: t("settings.integration.backToIntegrations.subtitle"),
               icon: "back"
             })}
+            ${this.renderActionRow({
+              focusKey: "integration:tmdb:credential",
+              title: t("settings.integration.tmdb.apiKey.title", {}, "TMDB API key"),
+              subtitle: TMDB_API_KEY
+                ? t(
+                    "settings.integration.privateCredential.subtitle",
+                    {},
+                    "Stored in the private TV runtime and hidden from the interface"
+                  )
+                : t("settings.integration.privateCredential.missing", {}, "No private API key configured"),
+              value: TMDB_API_KEY
+                ? t("settings.integration.privateCredential.configured", {}, "Configured privately")
+                : t("common.notSet"),
+              disabled: true
+            })}
             ${this.renderToggleRow({
               focusKey: "integration:tmdb:enabled",
               title: t("settings.integration.tmdb.enable.title"),
@@ -4477,6 +4493,9 @@ export const SettingsScreen = {
         MdbListSettingsStore.set({ enabled: !MdbListSettingsStore.get().enabled });
       });
       this.actionMap.set("integration:mdblist:key", () => {
+        if (MDBLIST_API_KEY) {
+          return;
+        }
         this.openTextDialog({
           title: t("settings.integration.mdblist.dialog.title"),
           value: MdbListSettingsStore.get().apiKey || "",
@@ -4542,9 +4561,17 @@ export const SettingsScreen = {
             ${this.renderActionRow({
               focusKey: "integration:mdblist:key",
               title: t("settings.integration.mdblist.apiKey.title"),
-              subtitle: t("settings.integration.mdblist.apiKey.subtitle"),
-              value: maskValue(model.mdbList.apiKey, t("common.notSet")),
-              disabled: !model.mdbList.enabled
+              subtitle: MDBLIST_API_KEY
+                ? t(
+                    "settings.integration.privateCredential.subtitle",
+                    {},
+                    "Stored in the private TV runtime and hidden from the interface"
+                  )
+                : t("settings.integration.mdblist.apiKey.subtitle"),
+              value: MDBLIST_API_KEY
+                ? t("settings.integration.privateCredential.configured", {}, "Configured privately")
+                : maskValue(model.mdbList.apiKey, t("common.notSet")),
+              disabled: !model.mdbList.enabled || Boolean(MDBLIST_API_KEY)
             })}
             ${[
               ["trakt", "showTrakt"],

@@ -1,9 +1,11 @@
 import { createProfileScopedStore } from "./profileScopedStore.js";
+import { TMDB_API_KEY } from "../../config.js";
 
 const KEY = "tmdbSettings";
 
 const DEFAULTS = {
   enabled: false,
+  privateCredentialInitialized: false,
   modernHomeEnabled: false,
   enrichContinueWatching: true,
   language: "en",
@@ -36,8 +38,16 @@ export function normalizeTmdbLanguageCode(value = DEFAULTS.language) {
 
 function normalizeTmdbSettings(value = {}) {
   const source = value && typeof value === "object" ? value : {};
+  const hasPrivateCredential = Boolean(String(TMDB_API_KEY || "").trim());
+  const privateCredentialInitialized = source.privateCredentialInitialized === true;
   return {
-    enabled: Boolean(source.enabled),
+    // Enable a newly provisioned private credential once. The marker preserves
+    // the user's later on/off choice instead of forcing the integration on at
+    // every startup.
+    enabled: privateCredentialInitialized
+      ? Boolean(source.enabled)
+      : Boolean(source.enabled || hasPrivateCredential),
+    privateCredentialInitialized: privateCredentialInitialized || hasPrivateCredential,
     modernHomeEnabled: Boolean(source.modernHomeEnabled),
     enrichContinueWatching: source.enrichContinueWatching !== false,
     language: normalizeTmdbLanguageCode(source.language),

@@ -22,6 +22,7 @@ export const DONATIONS_BASE_URL = String(runtimeEnv.DONATIONS_BASE_URL || "").tr
 export const DONATIONS_DONATE_URL = String(runtimeEnv.DONATIONS_DONATE_URL || "").trim();
 export const SPONSOR_NAMES = String(runtimeEnv.SPONSOR_NAMES || "").trim() || "ragmehos.";
 export const TMDB_API_KEY = String(runtimeEnv.TMDB_API_KEY || "").trim();
+export const MDBLIST_API_KEY = String(runtimeEnv.MDBLIST_API_KEY || "").trim();
 export const TRAKT_CLIENT_ID = String(runtimeEnv.TRAKT_CLIENT_ID || "").trim();
 export const TRAKT_CLIENT_SECRET = String(runtimeEnv.TRAKT_CLIENT_SECRET || "").trim();
 export const TRAKT_API_URL = String(runtimeEnv.TRAKT_API_URL || "https://api.trakt.tv").trim();

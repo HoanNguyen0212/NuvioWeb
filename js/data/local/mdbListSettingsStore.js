@@ -2,10 +2,12 @@ import { createProfileScopedStore } from "./profileScopedStore.js";
 import { MDBLIST_API_KEY } from "../../config.js";
 
 const KEY = "mdbListSettings";
+const PRIVATE_CREDENTIAL_PROVISION_VERSION = 1;
 
 const DEFAULTS = {
   enabled: false,
   privateCredentialInitialized: false,
+  privateCredentialProvisionVersion: 0,
   privateCredentialCloudInitialized: false,
   apiKey: "",
   showTrakt: true,
@@ -21,13 +23,24 @@ function normalizeMdbListSettings(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   const hasPrivateCredential = Boolean(String(MDBLIST_API_KEY || "").trim());
   const privateCredentialInitialized = source.privateCredentialInitialized === true;
+  const privateCredentialProvisionVersion = Math.max(
+    0,
+    Number(source.privateCredentialProvisionVersion || 0)
+  );
+  const shouldProvisionPrivateCredential = hasPrivateCredential
+    && privateCredentialProvisionVersion < PRIVATE_CREDENTIAL_PROVISION_VERSION;
   return {
     ...DEFAULTS,
     ...source,
-    enabled: privateCredentialInitialized
-      ? Boolean(source.enabled)
-      : Boolean(source.enabled || hasPrivateCredential),
+    enabled: shouldProvisionPrivateCredential
+      ? true
+      : privateCredentialInitialized
+        ? Boolean(source.enabled)
+        : Boolean(source.enabled || hasPrivateCredential),
     privateCredentialInitialized: privateCredentialInitialized || hasPrivateCredential,
+    privateCredentialProvisionVersion: hasPrivateCredential
+      ? PRIVATE_CREDENTIAL_PROVISION_VERSION
+      : privateCredentialProvisionVersion,
     privateCredentialCloudInitialized: source.privateCredentialCloudInitialized === true,
     // A private runtime credential must never be copied into profile storage or
     // profile-cloud sync. Keep the old per-profile field only as a fallback for

@@ -31,6 +31,22 @@ test("private credentials auto-enable once without entering MDBList key in profi
     TMDB_API_KEY: "private-tmdb-test-key",
     MDBLIST_API_KEY: "private-mdblist-test-key"
   };
+  // Reproduce the TV state left by the original boolean-only migration: the
+  // private marker exists, but an older cloud snapshot has disabled MDBList.
+  values.set(
+    "mdbListSettings",
+    JSON.stringify({
+      __profileScoped: true,
+      version: 1,
+      profiles: {
+        "1": {
+          enabled: false,
+          privateCredentialInitialized: true,
+          apiKey: "old-profile-key-must-not-survive"
+        }
+      }
+    })
+  );
 
   const [{ TmdbSettingsStore }, { MdbListSettingsStore }] = await Promise.all([
     import("../js/data/local/tmdbSettingsStore.js"),
@@ -43,6 +59,7 @@ test("private credentials auto-enable once without entering MDBList key in profi
   assert.equal(tmdb.privateCredentialInitialized, true);
   assert.equal(mdbList.enabled, true);
   assert.equal(mdbList.privateCredentialInitialized, true);
+  assert.equal(mdbList.privateCredentialProvisionVersion, 1);
   assert.equal(mdbList.apiKey, "");
 
   TmdbSettingsStore.setForProfile("1", { enabled: false }, { silentSync: true });

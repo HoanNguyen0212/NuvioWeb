@@ -29,6 +29,7 @@ import {
   hasProfileSettingsCloudSyncPending
 } from "../../data/local/profileScopedStore.js";
 import { normalizeSubtitleVerticalOffset } from "../player/subtitleVerticalOffset.js";
+import { MDBLIST_API_KEY } from "../../config.js";
 
 const PULL_RPC = "sync_pull_profile_settings_blob";
 const PUSH_RPC = "sync_push_profile_settings_blob";
@@ -1383,8 +1384,16 @@ const FEATURE_ADAPTERS = {
     },
     import(profileId, rawFeature = {}) {
       const raw = normalizeFeaturePayload(rawFeature);
+      const current = MdbListSettingsStore.getForProfile(profileId);
+      const shouldInitializePrivateCredential = Boolean(String(MDBLIST_API_KEY || "").trim())
+        && current.privateCredentialCloudInitialized !== true;
       const partial = {};
-      if (booleanOrNull(raw.mdblist_enabled) != null) {
+      if (shouldInitializePrivateCredential) {
+        // Do not let an older cloud snapshot disable a newly provisioned
+        // private credential. Push the enabled state back exactly once.
+        partial.enabled = true;
+        partial.privateCredentialCloudInitialized = true;
+      } else if (booleanOrNull(raw.mdblist_enabled) != null) {
         partial.enabled = Boolean(raw.mdblist_enabled);
       }
       if (raw.mdblist_api_key != null) {
@@ -1414,7 +1423,9 @@ const FEATURE_ADAPTERS = {
       if (!Object.keys(partial).length) {
         return false;
       }
-      MdbListSettingsStore.setForProfile(profileId, partial, { silentSync: true });
+      MdbListSettingsStore.setForProfile(profileId, partial, {
+        silentSync: !shouldInitializePrivateCredential
+      });
       return true;
     }
   },

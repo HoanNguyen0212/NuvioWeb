@@ -6,6 +6,7 @@ const KEY = "mdbListSettings";
 const DEFAULTS = {
   enabled: false,
   privateCredentialInitialized: false,
+  privateCredentialCloudInitialized: false,
   apiKey: "",
   showTrakt: true,
   showImdb: true,
@@ -27,6 +28,7 @@ function normalizeMdbListSettings(value = {}) {
       ? Boolean(source.enabled)
       : Boolean(source.enabled || hasPrivateCredential),
     privateCredentialInitialized: privateCredentialInitialized || hasPrivateCredential,
+    privateCredentialCloudInitialized: source.privateCredentialCloudInitialized === true,
     // A private runtime credential must never be copied into profile storage or
     // profile-cloud sync. Keep the old per-profile field only as a fallback for
     // installations without a provisioned runtime key.

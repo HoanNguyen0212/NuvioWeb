@@ -20,6 +20,7 @@ const appName = "Nuvio TV";
 const webOsServiceId = "space.nuvio.webos.service";
 const webOsServiceSourceDir = path.join(rootDir, "services", "webos");
 const webOsRuntimeScriptPath = "assets/libs/webOSTV.js";
+const appBundleCacheKey = "20260818r4c2";
 
 async function assertDistExists() {
   try {
@@ -120,7 +121,7 @@ function buildWebOsIndexHtml({ webOsScriptPath = "" } = {}) {
   <script src="nuvio.env.js"></script>
 ${webOsScriptTag}  <script>
     window.NuvioBootGuard.runCompatibilityGate(${compatibilityOptions}, function startNuvioApp() {
-      window.NuvioBootGuard.loadScript("app.bundle.js");
+      window.NuvioBootGuard.loadScript("app.bundle.js?v=${appBundleCacheKey}");
     });
   </script>
 </body>

@@ -6,6 +6,7 @@ import {
   shouldPreserveHomeDom,
   shouldResumePreservedHome
 } from "./homeDomPreservation.js";
+import { resolveHomeVerticalTarget } from "./homeRowAlignment.js";
 import { addonRepository } from "../../../data/repository/addonRepository.js";
 import { catalogRepository } from "../../../data/repository/catalogRepository.js";
 import { watchProgressRepository } from "../../../data/repository/watchProgressRepository.js";
@@ -3673,15 +3674,18 @@ export const HomeScreen = {
     };
   },
 
-  resolvePreferredNodeForRow(rowNodes = [], _fallbackCol = 0) {
+  resolvePreferredNodeForRow(rowNodes = [], fallbackCol = 0, sourceNode = null) {
     if (!Array.isArray(rowNodes) || !rowNodes.length) {
       return null;
+    }
+    if (sourceNode) {
+      return resolveHomeVerticalTarget(rowNodes, sourceNode, fallbackCol);
     }
     const rowKey = this.getNodeRowKey(rowNodes[0]);
     const storedIndex = rowKey
       ? Number(this.lastFocusedItemIndexByRowKey?.[rowKey])
       : Number.NaN;
-    const preferredIndex = Number.isFinite(storedIndex) ? storedIndex : 0;
+    const preferredIndex = Number.isFinite(storedIndex) ? storedIndex : fallbackCol;
     return rowNodes[Math.max(0, Math.min(rowNodes.length - 1, preferredIndex))] || rowNodes[0];
   },
 
@@ -7005,7 +7009,7 @@ export const HomeScreen = {
       if (!targetRowNodes || !targetRowNodes.length) {
         return true;
       }
-      const target = this.resolvePreferredNodeForRow(targetRowNodes, col);
+      const target = this.resolvePreferredNodeForRow(targetRowNodes, col, current);
       return this.focusNode(current, target, direction, inputMeta) || true;
     }
 

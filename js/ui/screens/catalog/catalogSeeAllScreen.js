@@ -193,6 +193,7 @@ export const CatalogSeeAllScreen = {
     this.posterOptionsFocusKey = "";
     this.pendingPosterHoldTarget = null;
     this.pendingPosterHoldTimer = null;
+    this.focusedElement = null;
     await this.refreshWatchedTitleIds();
 
     if (
@@ -334,16 +335,24 @@ export const CatalogSeeAllScreen = {
     return rowNodes[Math.max(0, Math.min(rowNodes.length - 1, preferredIndex))] || rowNodes[0];
   },
 
+  getCurrentFocusedNode() {
+    if (this.focusedElement?.isConnected && this.container?.contains(this.focusedElement)) {
+      return this.focusedElement;
+    }
+    this.focusedElement = this.container?.querySelector(".seeall-card.focusable.focused") || null;
+    return this.focusedElement;
+  },
+
   focusNode(target) {
     if (!target) {
       return false;
     }
-    this.container?.querySelectorAll(".focusable.focused").forEach((node) => {
-      if (node !== target) {
-        node.classList.remove("focused");
-      }
-    });
+    const current = this.getCurrentFocusedNode();
+    if (current && current !== target) {
+      current.classList.remove("focused");
+    }
     target.classList.add("focused");
+    this.focusedElement = target;
     focusWithoutAutoScroll(target);
     this.lastFocusedKey = target.dataset.focusKey || this.lastFocusedKey;
     this.rememberRowFocus(target);
@@ -385,7 +394,7 @@ export const CatalogSeeAllScreen = {
     }
 
     const nav = this.navModel;
-    const current = this.container?.querySelector(".seeall-card.focused") || null;
+    const current = this.getCurrentFocusedNode();
     if (!nav?.rows?.length || !current) {
       return false;
     }
@@ -437,10 +446,12 @@ export const CatalogSeeAllScreen = {
       return;
     }
 
-    this.container?.querySelectorAll(".focusable.focused").forEach((node) => {
-      if (node !== target) node.classList.remove("focused");
-    });
+    const current = this.getCurrentFocusedNode();
+    if (current && current !== target) {
+      current.classList.remove("focused");
+    }
     target.classList.add("focused");
+    this.focusedElement = target;
     focusWithoutAutoScroll(target);
     this.rememberRowFocus(target);
     if (scrollMode !== "none") {
@@ -652,10 +663,12 @@ export const CatalogSeeAllScreen = {
       if (node.__boundFocusHandlers) return;
       node.__boundFocusHandlers = true;
       node.addEventListener("focus", () => {
+        this.focusedElement = node;
         this.lastFocusedKey = node.dataset.focusKey || this.lastFocusedKey;
         this.savedScrollTop = this.container?.querySelector(".seeall-shell")?.scrollTop || 0;
       });
       node.addEventListener("mouseenter", () => {
+        this.focusedElement = node.classList.contains("focused") ? node : this.focusedElement;
         this.lastFocusedKey = node.dataset.focusKey || this.lastFocusedKey;
       });
     });
@@ -710,7 +723,7 @@ export const CatalogSeeAllScreen = {
       return;
     }
     const code = Number(event?.keyCode || 0);
-    const focusedBeforeDpad = this.container?.querySelector(".focusable.focused") || null;
+    const focusedBeforeDpad = this.getCurrentFocusedNode();
     if (code === 13 && this.isPosterHoldTarget(focusedBeforeDpad)) {
       event?.preventDefault?.();
       if (!event?.repeat && !this.hasPendingPosterHold(focusedBeforeDpad)) {
@@ -724,7 +737,7 @@ export const CatalogSeeAllScreen = {
     if (code !== 13) {
       return;
     }
-    const current = this.container.querySelector(".focusable.focused");
+    const current = this.getCurrentFocusedNode();
     if (!current) {
       return;
     }
@@ -756,6 +769,7 @@ export const CatalogSeeAllScreen = {
     this.posterOptionsController?.destroy?.({ restoreFocus: false });
     this.posterOptionsController = null;
     this.posterOptionsFocusKey = "";
+    this.focusedElement = null;
     ScreenUtils.hide(this.container);
   }
 };

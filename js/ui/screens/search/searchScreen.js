@@ -1,5 +1,6 @@
 import { Router } from "../../navigation/router.js";
 import { ScreenUtils } from "../../navigation/screen.js";
+import { retargetSpringScrollState } from "../../navigation/springScrollRetarget.js";
 import { addonRepository } from "../../../data/repository/addonRepository.js";
 import { catalogRepository } from "../../../data/repository/catalogRepository.js";
 import { watchedItemsRepository } from "../../../data/repository/watchedItemsRepository.js";
@@ -1475,7 +1476,7 @@ export const SearchScreen = {
     const existing = springMap.get(container) || {};
     const active = existing[key];
     if (active) {
-      active.target = nextValue;
+      retargetSpringScrollState(active, Number(container[property] || 0), nextValue);
       active.stiffness = Number(
         options?.stiffness ?? active.stiffness ?? MODERN_HOME_CONSTANTS.springScrollStiffness
       );

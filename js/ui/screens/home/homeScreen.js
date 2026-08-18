@@ -1,6 +1,11 @@
 import { Router } from "../../navigation/router.js";
 import { shouldWriteMarkup } from "../renderMarkupGuard.js";
 import { ScreenUtils } from "../../navigation/screen.js";
+import {
+  shouldDeferHorizontalHomeEffects,
+  shouldPreserveHomeDom,
+  shouldResumePreservedHome
+} from "./homeDomPreservation.js";
 import { addonRepository } from "../../../data/repository/addonRepository.js";
 import { catalogRepository } from "../../../data/repository/catalogRepository.js";
 import { watchProgressRepository } from "../../../data/repository/watchProgressRepository.js";
@@ -3276,15 +3281,16 @@ export const HomeScreen = {
     );
   },
 
-  shouldDeferContinueWatchingFocusEffects(node, direction = null, inputMeta = null) {
+  shouldDeferHorizontalFocusEffects(node, direction = null, inputMeta = null) {
     void inputMeta;
-    return Boolean(
-      (direction === "left" || direction === "right")
-      && this.shouldUseImmediateHorizontalScrollForNode(node)
-    );
+    return shouldDeferHorizontalHomeEffects({
+      direction,
+      isLegacyTvRuntime: this.isLegacyTvRuntime(),
+      usesImmediateNodeScroll: this.shouldUseImmediateHorizontalScrollForNode(node)
+    });
   },
 
-  scheduleDeferredContinueWatchingFocusEffects(node) {
+  scheduleDeferredHorizontalFocusEffects(node) {
     if (this.deferredContinueWatchingFocusTimer) {
       clearTimeout(this.deferredContinueWatchingFocusTimer);
       this.deferredContinueWatchingFocusTimer = null;
@@ -6713,7 +6719,7 @@ export const HomeScreen = {
     if (this.isMainNode(target)) {
       this.lastMainFocus = target;
       this.rememberMainRowFocus(target);
-      const shouldDeferFocusEffects = this.shouldDeferContinueWatchingFocusEffects(
+      const shouldDeferFocusEffects = this.shouldDeferHorizontalFocusEffects(
         target,
         direction,
         inputMeta
@@ -6729,7 +6735,7 @@ export const HomeScreen = {
       if (shouldDeferFocusEffects) {
         this.cancelPendingHeroFocus();
         this.cancelFocusedPosterFlow();
-        this.scheduleDeferredContinueWatchingFocusEffects(target);
+        this.scheduleDeferredHorizontalFocusEffects(target);
       } else {
         this.scheduleModernHeroUpdate(target);
         this.scheduleFocusedPosterFlow(target);
@@ -7195,17 +7201,18 @@ export const HomeScreen = {
       };
     }
 
-    const canResumePreservedTizenHome = Boolean(
-      Platform.isTizen() &&
-      navigationContext?.isBackNavigation &&
-      this.homeDomPreserved &&
-      this.hasLoadedOnce &&
-      Array.isArray(this.rows) &&
-      this.rows.length &&
-      this.container?.childNodes?.length &&
-      String(this.renderedLayoutMode || "") === String(this.layoutMode || "")
-    );
-    if (canResumePreservedTizenHome) {
+    const canResumePreservedHome = shouldResumePreservedHome({
+      isTizen: Platform.isTizen(),
+      isLegacyTvRuntime: this.isLegacyTvRuntime(),
+      isBackNavigation: Boolean(navigationContext?.isBackNavigation),
+      homeDomPreserved: Boolean(this.homeDomPreserved),
+      hasLoadedOnce: Boolean(this.hasLoadedOnce),
+      hasRows: Boolean(Array.isArray(this.rows) && this.rows.length),
+      hasDom: Boolean(this.container?.childNodes?.length),
+      renderedLayoutMode: this.renderedLayoutMode,
+      layoutMode: this.layoutMode
+    });
+    if (canResumePreservedHome) {
       this.homeDomPreserved = false;
       this.container.classList.remove("home-dom-preserved");
       this.container.style.removeProperty("visibility");
@@ -9245,7 +9252,8 @@ export const HomeScreen = {
     }
     if ((keyCode === 37 || keyCode === 39) && this.layoutMode === "modern") {
       const current = this.getCurrentFocusedNode();
-      if (this.shouldUseImmediateHorizontalScrollForNode(current)) {
+      const direction = keyCode === 37 ? "left" : "right";
+      if (this.shouldDeferHorizontalFocusEffects(current, direction)) {
         this.scheduleModernHeroUpdate(current);
         this.scheduleFocusedPosterFlow(current);
       }
@@ -9675,7 +9683,6 @@ export const HomeScreen = {
     this.pendingHomeLazyImageAnchor = null;
     this.homeLazyImageHydrationNeedsIndexRefresh = false;
     this.homeLazyImageHydrationIndex = null;
-    this.renderedMarkup = null;
     this.lastDirectionalKeyAtByDirection = {};
     this.homeTruncationScope = null;
     if (this.boundHomeEventContainer) {
@@ -9687,17 +9694,17 @@ export const HomeScreen = {
     }
     this.cachedModernPortraitPosterMetrics = null;
     this.cachedModernLandscapePosterMetrics = null;
-    const preserveRenderedTizenHome = Boolean(
-      Platform.isTizen() &&
-      this.hasLoadedOnce &&
-      Array.isArray(this.rows) &&
-      this.rows.length &&
-      this.container?.childNodes?.length
-    );
-    if (preserveRenderedTizenHome) {
-      // Keep layout alive while another screen is shown. Re-displaying a large
-      // Tizen catalog after display:none can itself force an expensive full
-      // layout before the first Home frame is painted.
+    const preserveRenderedHome = shouldPreserveHomeDom({
+      isTizen: Platform.isTizen(),
+      isLegacyTvRuntime: this.isLegacyTvRuntime(),
+      hasLoadedOnce: Boolean(this.hasLoadedOnce),
+      hasRows: Boolean(Array.isArray(this.rows) && this.rows.length),
+      hasDom: Boolean(this.container?.childNodes?.length)
+    });
+    if (preserveRenderedHome) {
+      // Keep the accepted Home DOM and markup signature alive while another
+      // screen is shown. Rebuilding the large catalog on legacy TVs delays Back
+      // navigation and can leave the D-pad model pointing at detached cards.
       this.container.style.position = "absolute";
       this.container.style.top = "0";
       this.container.style.right = "0";
@@ -9708,6 +9715,7 @@ export const HomeScreen = {
       this.container.classList.add("home-dom-preserved");
       this.homeDomPreserved = true;
     } else {
+      this.renderedMarkup = null;
       this.homeDomPreserved = false;
       this.container.classList.remove("home-dom-preserved");
       this.container.style.removeProperty("position");

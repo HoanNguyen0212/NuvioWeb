@@ -7,18 +7,21 @@ import {
   shouldResumePreservedHome
 } from "./homeDomPreservation.js";
 
-test("legacy webOS preserves the loaded Home DOM while opening another screen", () => {
-  assert.equal(shouldPreserveHomeDom({
-    isLegacyTvRuntime: true,
-    hasLoadedOnce: true,
-    hasRows: true,
-    hasDom: true
-  }), true);
+test("legacy webOS removes the focusable Home DOM before opening another screen", () => {
+  assert.equal(
+    shouldPreserveHomeDom({
+      isLegacyTvRuntime: true,
+      hasLoadedOnce: true,
+      hasRows: true,
+      hasDom: true
+    }),
+    false
+  );
 });
 
-test("Back resumes preserved legacy Home only when layout and DOM still match", () => {
+test("Back resumes preserved Tizen Home only when layout and DOM still match", () => {
   const accepted = {
-    isLegacyTvRuntime: true,
+    isTizen: true,
     isBackNavigation: true,
     homeDomPreserved: true,
     hasLoadedOnce: true,
@@ -33,24 +36,35 @@ test("Back resumes preserved legacy Home only when layout and DOM still match", 
 });
 
 test("legacy TV defers expensive Home effects during either horizontal direction", () => {
-  assert.equal(shouldDeferHorizontalHomeEffects({
-    direction: "right",
-    isLegacyTvRuntime: true
-  }), true);
-  assert.equal(shouldDeferHorizontalHomeEffects({
-    direction: "left",
-    isLegacyTvRuntime: true
-  }), true);
-  assert.equal(shouldDeferHorizontalHomeEffects({
-    direction: "down",
-    isLegacyTvRuntime: true
-  }), false);
+  assert.equal(
+    shouldDeferHorizontalHomeEffects({
+      direction: "right",
+      isLegacyTvRuntime: true
+    }),
+    true
+  );
+  assert.equal(
+    shouldDeferHorizontalHomeEffects({
+      direction: "left",
+      isLegacyTvRuntime: true
+    }),
+    true
+  );
+  assert.equal(
+    shouldDeferHorizontalHomeEffects({
+      direction: "down",
+      isLegacyTvRuntime: true
+    }),
+    false
+  );
 });
 
-test("ordinary browser sessions do not retain Home DOM", () => {
-  assert.equal(shouldPreserveHomeDom({
+test("Tizen can retain Home DOM while ordinary browser sessions cannot", () => {
+  const loadedHome = {
     hasLoadedOnce: true,
     hasRows: true,
     hasDom: true
-  }), false);
+  };
+  assert.equal(shouldPreserveHomeDom(loadedHome), false);
+  assert.equal(shouldPreserveHomeDom({ ...loadedHome, isTizen: true }), true);
 });

@@ -90,7 +90,7 @@ const orderedIncludes = [
   'href="css/nuvio-legacy-performance.css"',
   'src="boot-guard.js"',
   'src="nuvio.env.js"',
-  'loadScript("app.bundle.js?v=20260818r4c3")'
+  'loadScript("app.bundle.js?v=20260818r4c5")'
 ];
 let previousIndex = -1;
 for (const include of orderedIncludes) {

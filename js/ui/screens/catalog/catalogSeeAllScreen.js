@@ -84,11 +84,7 @@ function setContainerScrollTop(container, top, behavior = "auto") {
     return resolvedTop;
   }
 
-  const previousBehavior = container.style.scrollBehavior;
-  container.style.scrollBehavior = "auto";
   container.scrollTop = resolvedTop;
-  void container.offsetHeight;
-  container.style.scrollBehavior = previousBehavior;
   return resolvedTop;
 }
 
@@ -309,44 +305,61 @@ export const CatalogSeeAllScreen = {
     this.navModel = { rows };
   },
 
-  rememberRowFocus(node) {
-    if (!node?.dataset) {
-      return;
-    }
-    const row = Number(node.dataset.navRow || -1);
-    const col = Number(node.dataset.navCol || 0);
-    if (row < 0) {
-      return;
-    }
-    this.rowFocusedIndexByRow = {
-      ...(this.rowFocusedIndexByRow || {}),
-      [row]: Math.max(0, col)
-    };
-  },
-
-  resolvePreferredNodeForRow(rowNodes = []) {
+  resolvePreferredNodeForRow(rowNodes = [], fallbackCol = 0, anchorNode = null) {
     if (!Array.isArray(rowNodes) || !rowNodes.length) {
       return null;
     }
-    const rowIndex = Number(rowNodes[0]?.dataset?.navRow || -1);
-    const storedIndex = rowIndex >= 0 ? Number(this.rowFocusedIndexByRow?.[rowIndex]) : Number.NaN;
-    const preferredIndex = Number.isFinite(storedIndex) ? storedIndex : 0;
-    return rowNodes[Math.max(0, Math.min(rowNodes.length - 1, preferredIndex))] || rowNodes[0];
+
+    // Vertical movement must follow the current card, not the column that was
+    // focused the last time the destination row was visited. Remembering the
+    // destination row made Up/Down zig-zag between columns on the TV.
+    const anchorLeft = Number(anchorNode?.offsetLeft);
+    const anchorWidth = Number(anchorNode?.offsetWidth);
+    if (Number.isFinite(anchorLeft) && Number.isFinite(anchorWidth) && anchorWidth > 0) {
+      const anchorCenter = anchorLeft + anchorWidth / 2;
+      return (
+        rowNodes.reduce((closest, node) => {
+          const nodeLeft = Number(node?.offsetLeft);
+          const nodeWidth = Number(node?.offsetWidth);
+          if (!Number.isFinite(nodeLeft) || !Number.isFinite(nodeWidth) || nodeWidth <= 0) {
+            return closest;
+          }
+          const distance = Math.abs(nodeLeft + nodeWidth / 2 - anchorCenter);
+          return !closest || distance < closest.distance ? { node, distance } : closest;
+        }, null)?.node ||
+        rowNodes[Math.max(0, Math.min(rowNodes.length - 1, fallbackCol))] ||
+        rowNodes[0]
+      );
+    }
+
+    const preferredIndex = Math.max(0, Number(fallbackCol || 0));
+    return rowNodes[Math.min(rowNodes.length - 1, preferredIndex)] || rowNodes[0];
+  },
+
+  getCurrentFocusedNode() {
+    if (
+      this.focusedElement?.isConnected &&
+      this.container?.contains(this.focusedElement) &&
+      this.focusedElement.classList.contains("focused")
+    ) {
+      return this.focusedElement;
+    }
+    this.focusedElement = this.container?.querySelector(".seeall-card.focusable.focused") || null;
+    return this.focusedElement;
   },
 
   focusNode(target) {
     if (!target) {
       return false;
     }
-    this.container?.querySelectorAll(".focusable.focused").forEach((node) => {
-      if (node !== target) {
-        node.classList.remove("focused");
-      }
-    });
+    const current = this.getCurrentFocusedNode();
+    if (current && current !== target && current.isConnected) {
+      current.classList.remove("focused");
+    }
     target.classList.add("focused");
+    this.focusedElement = target;
     focusWithoutAutoScroll(target);
     this.lastFocusedKey = target.dataset.focusKey || this.lastFocusedKey;
-    this.rememberRowFocus(target);
     const shell = this.container?.querySelector(".seeall-shell") || null;
     const isFirstRow = Number(target.dataset.navRow || 0) === 0;
     const shouldLoadMore = this.shouldAutoLoadMore(target.dataset.itemIndex);
@@ -384,8 +397,11 @@ export const CatalogSeeAllScreen = {
       return false;
     }
 
+    if (!this.navModel?.rows?.length) {
+      this.buildNavigationModel();
+    }
     const nav = this.navModel;
-    const current = this.container?.querySelector(".seeall-card.focused") || null;
+    const current = this.getCurrentFocusedNode();
     if (!nav?.rows?.length || !current) {
       return false;
     }
@@ -397,11 +413,19 @@ export const CatalogSeeAllScreen = {
     const rowNodes = nav.rows[row] || [];
 
     if (direction === "left") {
-      return this.focusNode(rowNodes[col - 1] || current) || true;
+      const target = rowNodes[col - 1] || null;
+      if (target) {
+        return this.focusNode(target);
+      }
+      return true;
     }
 
     if (direction === "right") {
-      return this.focusNode(rowNodes[col + 1] || current) || true;
+      const target = rowNodes[col + 1] || null;
+      if (target) {
+        return this.focusNode(target);
+      }
+      return true;
     }
 
     if (direction === "up" || direction === "down") {
@@ -410,11 +434,11 @@ export const CatalogSeeAllScreen = {
       if (!targetRowNodes?.length) {
         if (direction === "up" && row === 0) {
           const shell = this.container?.querySelector(".seeall-shell") || null;
-          this.savedScrollTop = setContainerScrollTop(shell, 0, "smooth");
+          this.savedScrollTop = setContainerScrollTop(shell, 0, "auto");
         }
         return true;
       }
-      return this.focusNode(this.resolvePreferredNodeForRow(targetRowNodes)) || true;
+      return this.focusNode(this.resolvePreferredNodeForRow(targetRowNodes, col, current)) || true;
     }
 
     return false;
@@ -437,14 +461,19 @@ export const CatalogSeeAllScreen = {
       return;
     }
 
-    this.container?.querySelectorAll(".focusable.focused").forEach((node) => {
-      if (node !== target) node.classList.remove("focused");
-    });
+    const current = this.getCurrentFocusedNode();
+    if (current && current !== target && current.isConnected) {
+      current.classList.remove("focused");
+    }
     target.classList.add("focused");
+    this.focusedElement = target;
     focusWithoutAutoScroll(target);
-    this.rememberRowFocus(target);
     if (scrollMode !== "none") {
-      scrollNodeIntoContainerView(target, shell, { center: scrollMode === "center", padding: 20 });
+      scrollNodeIntoContainerView(target, shell, {
+        center: scrollMode === "center",
+        padding: 20,
+        behavior: "auto"
+      });
     }
     this.lastFocusedKey = target.dataset.focusKey || this.lastFocusedKey;
   },
@@ -652,10 +681,12 @@ export const CatalogSeeAllScreen = {
       if (node.__boundFocusHandlers) return;
       node.__boundFocusHandlers = true;
       node.addEventListener("focus", () => {
+        this.focusedElement = node;
         this.lastFocusedKey = node.dataset.focusKey || this.lastFocusedKey;
         this.savedScrollTop = this.container?.querySelector(".seeall-shell")?.scrollTop || 0;
       });
       node.addEventListener("mouseenter", () => {
+        this.focusedElement = node.classList.contains("focused") ? node : this.focusedElement;
         this.lastFocusedKey = node.dataset.focusKey || this.lastFocusedKey;
       });
     });
@@ -756,6 +787,7 @@ export const CatalogSeeAllScreen = {
     this.posterOptionsController?.destroy?.({ restoreFocus: false });
     this.posterOptionsController = null;
     this.posterOptionsFocusKey = "";
+    this.focusedElement = null;
     ScreenUtils.hide(this.container);
   }
 };

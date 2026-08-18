@@ -3693,7 +3693,7 @@ export const HomeScreen = {
   },
 
   getCurrentFocusedNode() {
-    if (this.currentFocusedNode && this.container?.contains(this.currentFocusedNode)) {
+    if (this.currentFocusedNode && this.currentFocusedNode.isConnected && this.container?.contains(this.currentFocusedNode)) {
       return this.currentFocusedNode;
     }
     const focused = this.container?.querySelector(".focusable.focused") || null;
@@ -6883,6 +6883,9 @@ export const HomeScreen = {
       return false;
     }
 
+    if (!this.navModel || !this.navModel.rows?.length) {
+      this.buildNavigationModel();
+    }
     const nav = this.navModel;
     if (!nav) {
       return false;
@@ -7215,20 +7218,36 @@ export const HomeScreen = {
     if (canResumePreservedHome) {
       this.homeDomPreserved = false;
       this.container.classList.remove("home-dom-preserved");
+      this.container.style.removeProperty("position");
+      this.container.style.removeProperty("top");
+      this.container.style.removeProperty("right");
+      this.container.style.removeProperty("bottom");
+      this.container.style.removeProperty("left");
       this.container.style.removeProperty("visibility");
       this.container.style.removeProperty("pointer-events");
       setModernSidebarPillIconOnly(this.container, this.pillIconOnly);
       this.scheduleModernSidebarPillAutoCollapse();
       this.homeLoadToken = (this.homeLoadToken || 0) + 1;
+      this.buildNavigationModel();
       this.bindHomeViewportEvents();
       if (this.layoutMode === "modern") {
         this.setupModernTrackScrollPagination();
       }
-      const restoredFocus = this.restoreFocusState(returnFocusState);
+      let restoredFocus = this.restoreFocusState(returnFocusState);
+      if (!restoredFocus && returnFocusState) {
+        restoredFocus = this.restoreBackFocusFallback(returnFocusState);
+      }
       if (restoredFocus) {
         this.isRestoringFocusFromBack = false;
       } else {
         ScreenUtils.setInitialFocus(this.container, this.getInitialFocusSelector());
+        const current = this.container.querySelector(".home-main .focusable.focused");
+        if (current && this.isMainNode(current)) {
+          this.setFocusedNode(current, { suppressDelegatedFocus: true });
+          this.lastMainFocus = current;
+          this.rememberMainRowFocus(current);
+        }
+        this.isRestoringFocusFromBack = false;
       }
       this.syncFocusedCollectionCardState();
       if (this.layoutMode === "grid") {
@@ -8167,6 +8186,9 @@ export const HomeScreen = {
       if (this.layoutMode === "modern") {
         this.setupModernTrackScrollPagination();
       }
+    } else if (!this.navModel || !this.navModel.rows?.length) {
+      this.buildNavigationModel();
+      this.bindHomeViewportEvents();
     }
     this.scheduleModernSidebarPillAutoCollapse();
     const canAttemptRestore = Boolean(retainedFocusState);

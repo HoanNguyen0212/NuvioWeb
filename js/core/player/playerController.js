@@ -5,6 +5,11 @@ import { Platform } from "../../platform/index.js";
 import { WatchProgressSyncService } from "../profile/watchProgressSyncService.js";
 import { nativeVideoEngine } from "./engines/nativeVideoEngine.js";
 import { hlsJsEngine } from "./engines/hlsJsEngine.js";
+import {
+  HLS_TRANSIENT_LEVEL_404_RETRY_LIMIT,
+  getHlsTransient404RetryDelay,
+  isTransientHlsLevel404
+} from "./hlsTransient404Recovery.js";
 import { dashJsEngine } from "./engines/dashJsEngine.js";
 import { resolvePlatformAvplayEngine } from "./engines/platformAvplayEngine.js";
 import {
@@ -28,6 +33,15 @@ function logTizenAvPlayDebug(...args) {
   if (globalThis.__NUVIO_DEBUG_TIZEN_AVPLAY__ || globalThis.__NUVIO_DEBUG_ENGINEFS__) {
     console.info(...args);
   }
+}
+
+function recordPlayerMetric(name) {
+  if (!globalThis.__NUVIO_DEBUG_LEGACY_METRICS__) {
+    return;
+  }
+  const root = globalThis.__NUVIO_LEGACY_METRICS__ || (globalThis.__NUVIO_LEGACY_METRICS__ = {});
+  const player = root.player || (root.player = {});
+  player[name] = Number(player[name] || 0) + 1;
 }
 
 function isValidAvPlayAudioTrackSelectionState(state) {
@@ -87,6 +101,9 @@ export const PlayerController = {
   lifecycleFlushHandler: null,
   visibilityFlushHandler: null,
   hlsInstance: null,
+  hlsTransientLevel404RetryTimer: null,
+  hlsTransientLevel404RetryCount: 0,
+  hlsTransientLevel404FailureRecorded: false,
   dashInstance: null,
   playbackEngine: "none",
   avplayActive: false,
@@ -2644,7 +2661,19 @@ export const PlayerController = {
     return capabilities;
   },
 
+  clearHlsTransientLevel404Retry({ resetCount = true } = {}) {
+    if (this.hlsTransientLevel404RetryTimer) {
+      clearTimeout(this.hlsTransientLevel404RetryTimer);
+      this.hlsTransientLevel404RetryTimer = null;
+    }
+    if (resetCount) {
+      this.hlsTransientLevel404RetryCount = 0;
+      this.hlsTransientLevel404FailureRecorded = false;
+    }
+  },
+
   teardownHlsInstance() {
+    this.clearHlsTransientLevel404Retry();
     if (!this.hlsInstance) {
       return;
     }
@@ -2772,6 +2801,53 @@ export const PlayerController = {
     };
   },
 
+  scheduleHlsTransientLevel404Retry({ hls, url, playToken } = {}) {
+    if (
+      !hls
+      || this.hlsInstance !== hls
+      || !this.isPlaybackRequestActive(playToken, url)
+      || this.hlsTransientLevel404RetryTimer
+    ) {
+      return false;
+    }
+    if (this.hlsTransientLevel404RetryCount >= HLS_TRANSIENT_LEVEL_404_RETRY_LIMIT) {
+      if (!this.hlsTransientLevel404FailureRecorded) {
+        this.hlsTransientLevel404FailureRecorded = true;
+        recordPlayerMetric("hlsLevel404RetryFailureCount");
+      }
+      return false;
+    }
+
+    this.hlsTransientLevel404RetryCount += 1;
+    const retryNumber = this.hlsTransientLevel404RetryCount;
+    const delayMs = getHlsTransient404RetryDelay(retryNumber);
+    recordPlayerMetric("hlsLevel404RetryCount");
+    this.hlsTransientLevel404RetryTimer = setTimeout(() => {
+      this.hlsTransientLevel404RetryTimer = null;
+      if (
+        this.hlsInstance !== hls
+        || !this.isPlaybackRequestActive(playToken, url)
+      ) {
+        return;
+      }
+      try {
+        hls.loadSource(url);
+        hls.startLoad();
+      } catch (error) {
+        recordPlayerMetric("hlsLevel404RetryFailureCount");
+        this.lastPlaybackErrorCode = 2;
+        this.teardownHlsInstance();
+        this.emitVideoEvent("error", {
+          playbackEngine: "hls.js",
+          mediaErrorCode: 2,
+          hlsErrorType: "networkError",
+          hlsErrorDetails: String(error?.message || error || "levelLoadError 404 retry failed")
+        });
+      }
+    }, delayMs);
+    return true;
+  },
+
   pickInitialHlsLevel(levels = []) {
     const candidates = Array.isArray(levels) ? levels : [];
     let selectedIndex = -1;
@@ -2833,7 +2909,16 @@ export const PlayerController = {
       if (!this.isPlaybackRequestActive(playToken, url)) {
         return;
       }
-      if (!data?.fatal) {
+      const transientLevel404 = isTransientHlsLevel404(data, Hls);
+      if (transientLevel404) {
+        if (this.hlsTransientLevel404RetryTimer) {
+          return;
+        }
+        if (this.scheduleHlsTransientLevel404Retry({ hls, url, playToken })) {
+          return;
+        }
+      }
+      if (!data?.fatal && !transientLevel404) {
         return;
       }
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
@@ -2903,6 +2988,18 @@ export const PlayerController = {
         });
       }
     });
+
+    if (Hls.Events.LEVEL_LOADED) {
+      hls.on(Hls.Events.LEVEL_LOADED, () => {
+        if (!this.isPlaybackRequestActive(playToken, url)) {
+          return;
+        }
+        if (this.hlsTransientLevel404RetryCount > 0) {
+          recordPlayerMetric("hlsLevel404RetrySuccessCount");
+        }
+        this.clearHlsTransientLevel404Retry();
+      });
+    }
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       if (!this.isPlaybackRequestActive(playToken, url)) {

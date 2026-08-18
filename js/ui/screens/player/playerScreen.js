@@ -53,6 +53,10 @@ import {
   shouldShowNextEpisodeCard as shouldShowNextEpisodeCardRule
 } from "./playerNextEpisodeRules.js";
 import {
+  MAX_WEBOS_NATIVE_STARTUP_RETRIES,
+  shouldRetryWebOsNativeStartup
+} from "./webOsNativeStartupRetry.js";
+import {
   buildHtmlSubtitleCue,
   getSubtitleAssAlignment,
   getSubtitleAssAlignmentSettings,
@@ -99,6 +103,15 @@ function logEngineFsDebug(...args) {
   if (globalThis.__NUVIO_DEBUG_ENGINEFS__) {
     console.info(...args);
   }
+}
+
+function recordPlayerMetric(name) {
+  if (!globalThis.__NUVIO_DEBUG_LEGACY_METRICS__) {
+    return;
+  }
+  const root = globalThis.__NUVIO_LEGACY_METRICS__ || (globalThis.__NUVIO_LEGACY_METRICS__ = {});
+  const player = root.player || (root.player = {});
+  player[name] = Number(player[name] || 0) + 1;
 }
 
 function buildPendingPlaybackRestore(params = {}) {
@@ -2292,6 +2305,9 @@ export const PlayerScreen = {
     this.failedPlaybackUrls = new Set();
     this.failedPlaybackStreamIds = new Set();
     this.playbackStallTimer = null;
+    this.webOsNativeStartupRetryCount = 0;
+    this.webOsNativeStartupRetrySourceUrl = "";
+    this.webOsNativeStartupRetryFailureRecorded = false;
     this.engineFsStartupRetryTimer = null;
     this.engineFsStartupErrorRetries = 0;
     this.engineFsStallExtensions = 0;
@@ -8463,6 +8479,10 @@ export const PlayerScreen = {
       return false;
     }
     this.hasPresentedPlaybackFrame = true;
+    if (Number(this.webOsNativeStartupRetryCount || 0) > 0) {
+      recordPlayerMetric("nativeStartupRetrySuccessCount");
+    }
+    this.resetWebOsNativeStartupRetry(this.activePlaybackUrl);
     this.warmBitmapSubtitleSharedResources();
     if (!this.startupTrackPreferenceReady) {
       // Some P2P / engineFs startups expose tracks before the first real frame
@@ -9439,6 +9459,10 @@ export const PlayerScreen = {
       return;
     }
 
+    if (String(this.webOsNativeStartupRetrySourceUrl || "") !== String(streamUrl)) {
+      this.resetWebOsNativeStartupRetry(streamUrl);
+    }
+
     const selectedIndex = this.streamCandidates.findIndex((entry) => entry.url === streamUrl);
     if (selectedIndex >= 0) {
       this.currentStreamIndex = selectedIndex;
@@ -9871,6 +9895,68 @@ export const PlayerScreen = {
     }
   },
 
+  resetWebOsNativeStartupRetry(sourceUrl = "") {
+    this.webOsNativeStartupRetryCount = 0;
+    this.webOsNativeStartupRetrySourceUrl = String(sourceUrl || "");
+    this.webOsNativeStartupRetryFailureRecorded = false;
+  },
+
+  handleWebOsNativeStartupStall(expectedUrl = this.activePlaybackUrl) {
+    const video = PlayerController.video;
+    const context = {
+      isWebOs: Environment.isWebOS(),
+      playerRouteActive: Boolean(this.playerRouteActive),
+      routeName: Router.getCurrent(),
+      activeUrl: this.activePlaybackUrl,
+      expectedUrl,
+      playbackEngine: PlayerController.playbackEngine,
+      readyState: Number(PlayerController.getPlaybackReadyState?.() || video?.readyState || 0),
+      networkState: Number(video?.networkState || 0),
+      mediaError: video?.error || null,
+      lastPlaybackErrorCode: Number(PlayerController.getLastPlaybackErrorCode?.() || 0),
+      hasPresentedPlaybackFrame: Boolean(this.hasPresentedPlaybackFrame),
+      currentTimeAdvanced: Boolean(this.startupPlaybackHasAdvanced),
+      retryCount: Number(this.webOsNativeStartupRetryCount || 0),
+      hasEngineFsStream: Boolean(this.currentEngineFsStream)
+    };
+
+    if (shouldRetryWebOsNativeStartup(context)) {
+      this.webOsNativeStartupRetryCount += 1;
+      this.webOsNativeStartupRetrySourceUrl = String(expectedUrl || "");
+      recordPlayerMetric("nativeStartupRetryCount");
+      const sourceCandidate = this.getStreamCandidateByUrl(expectedUrl)
+        || this.getCurrentStreamCandidate();
+      const forceEngine = String(PlayerController.playbackEngine || "native-file");
+      console.warn("webOS native playback was ready but did not advance; retrying once", {
+        url: expectedUrl,
+        engine: forceEngine
+      });
+      void this.playStreamByUrl(expectedUrl, {
+        preservePanel: true,
+        resetSilentAudioState: false,
+        preservePendingRestore: Boolean(this.pendingPlaybackRestore),
+        forceEngine,
+        sourceCandidate,
+        mountToken: this.playerMountToken
+      });
+      return true;
+    }
+
+    const exhaustedContext = {
+      ...context,
+      retryCount: 0
+    };
+    if (
+      Number(context.retryCount || 0) >= MAX_WEBOS_NATIVE_STARTUP_RETRIES
+      && shouldRetryWebOsNativeStartup(exhaustedContext)
+      && !this.webOsNativeStartupRetryFailureRecorded
+    ) {
+      this.webOsNativeStartupRetryFailureRecorded = true;
+      recordPlayerMetric("nativeStartupRetryFailureCount");
+    }
+    return false;
+  },
+
   markPlaybackProgress() {
     const currentSeconds = this.getPlaybackCurrentSeconds();
     if (typeof PlayerController.recordProgressSnapshot === "function") {
@@ -10177,6 +10263,10 @@ export const PlayerScreen = {
           this.schedulePlaybackStallGuard({ timeoutMs: 12000 });
           return;
         }
+      }
+
+      if (startup && this.handleWebOsNativeStartupStall(this.activePlaybackUrl)) {
+        return;
       }
 
       const targetEngine = typeof PlayerController.getAlternativePlaybackEngine === "function"
@@ -17386,6 +17476,7 @@ export const PlayerScreen = {
     this.clearTrackDiscoveryTimer();
     this.stopLoadingLogoFillAnimation();
     this.clearPlaybackStallGuard();
+    this.resetWebOsNativeStartupRetry();
     if (this.engineFsStartupRetryTimer) {
       clearTimeout(this.engineFsStartupRetryTimer);
       this.engineFsStartupRetryTimer = null;

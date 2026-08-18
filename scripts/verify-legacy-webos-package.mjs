@@ -32,7 +32,12 @@ const sensitiveRuntimeKeys = [
 const overlayHashes = {
   "nuvio-legacy-fast-home.js": "ed7d432edead2db98fbd45d2090be30618e86f3ccb79f00e8bce9edad00ab380",
   "nuvio-legacy-polyfills.js": "e04badf84cf5b286d318cb0219da0eb17c5aa1932856ed002db575fd3d1505c2",
-  "css/nuvio-legacy-performance.css": "8a1050873dfc05c272cc50cf760f518937c09b40e0a030ee02f26260ba8ccaa4"
+  "css/nuvio-legacy-performance.css": "7e7dd876678e996c5e2364c7e15cd2853f75975698955764ae5e60b8f69be701"
+};
+const stagedOverlayHashes = {
+  "nuvio-legacy-fast-home.js": "045e4903abda3099bfdb1f9e22c6b4b237fde69e3719b8893c2712431a090409",
+  "nuvio-legacy-polyfills.js": "8b0f4471be7ef861ae40d699505493ec5e3a493fb8637e679d1b824b9c5e8ddd",
+  "css/nuvio-legacy-performance.css": overlayHashes["css/nuvio-legacy-performance.css"]
 };
 
 function assert(condition, message) {
@@ -111,7 +116,10 @@ for (const [relativePath, expectedHash] of Object.entries(overlayHashes)) {
   const stagedPath = path.join(appDir, relativePath);
   assert(await exists(stagedPath), `Missing legacy overlay: ${relativePath}`);
   assert((await sha256(sourcePath)) === expectedHash, `Source overlay hash changed: ${relativePath}`);
-  assert((await sha256(stagedPath)) === expectedHash, `Staged overlay hash changed: ${relativePath}`);
+  assert(
+    (await sha256(stagedPath)) === stagedOverlayHashes[relativePath],
+    `Staged overlay hash changed: ${relativePath}`
+  );
   const mode = (await stat(stagedPath)).mode & 0o777;
   assert((mode & 0o111) !== 0, `Legacy overlay is not executable/readable with mode 755: ${relativePath}`);
 }
@@ -172,7 +180,8 @@ const report = {
   totalApplicationBytes,
   chunkCount: applicationJavaScript.length - 1,
   runtimeEnvironment: "placeholder-only",
-  overlayHashes
+  overlayHashes,
+  stagedOverlayHashes
 };
 await mkdir(reportDir, { recursive: true });
 await writeFile(

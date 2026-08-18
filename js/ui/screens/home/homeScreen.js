@@ -2643,6 +2643,34 @@ export const HomeScreen = {
     return this.restoreLegacyFocusState(focusState);
   },
 
+  restoreBackFocusFallback(focusState = null) {
+    if (!this.container || this.homeHoldFocusLocked) {
+      return false;
+    }
+    const rowNodes = focusState?.rowKey
+      ? this.getNavigationRowNodes(focusState.rowKey)
+      : [];
+    const preferredIndex = Math.max(0, Number(focusState?.itemIndex || 0));
+    const target = rowNodes[Math.min(preferredIndex, Math.max(0, rowNodes.length - 1))]
+      || this.container.querySelector(this.getInitialFocusSelector())
+      || this.container.querySelector(
+        ".home-sidebar .focusable.selected, .modern-sidebar-panel .focusable.selected, [data-action=\"gotoHome\"].focusable"
+      );
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+    this.setFocusedNode(target, { suppressDelegatedFocus: true });
+    if (this.isMainNode(target)) {
+      this.lastMainFocus = target;
+      this.rememberMainRowFocus(target);
+      this.ensureTrackHorizontalVisibility(target);
+      this.ensureMainVerticalVisibility(target);
+    }
+    this.isRestoringFocusFromBack = false;
+    this.clearStoredReturnFocusState();
+    return true;
+  },
+
   restoreSidebarFocusState(focusState) {
     if (this.homeHoldFocusLocked || !focusState || !this.container) {
       return false;
@@ -7386,11 +7414,14 @@ export const HomeScreen = {
       return true;
     });
 
-    // Seed missing order keys from manifest order before progressive requests
-    // can add rows in network-completion order.
-    HomeCatalogStore.ensureOrderKeys(
-      uniqueCatalogDescriptors.map((catalog) =>
-        buildCatalogOrderKey(catalog.addonId, catalog.type, catalog.catalogId)
+    // Keep Home grouped by the configured addon order while preserving any
+    // catalog order the user chose inside each addon. Progressive requests can
+    // finish in any order, so reconcile before the first cached/network render.
+    HomeCatalogStore.reconcileAddonOrder(
+      addons.map((addon) =>
+        addon.catalogs
+          .filter((catalog) => !catalogRequiresExtras(catalog))
+          .map((catalog) => buildCatalogOrderKey(addon.id, catalog.apiType, catalog.id))
       )
     );
 
@@ -8151,6 +8182,9 @@ export const HomeScreen = {
     }
     if (!restoredFocus && !sidebarFocusLocked && !this.homeHoldFocusLocked && this.isRestoringFocusFromBack && backFocusState) {
       restoredFocus = this.restoreFocusState(backFocusState);
+      if (!restoredFocus) {
+        restoredFocus = this.restoreBackFocusFallback(backFocusState);
+      }
       if (restoredFocus) {
         this.isRestoringFocusFromBack = false;
       }

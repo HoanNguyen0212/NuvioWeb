@@ -17,6 +17,41 @@ export function buildCollectionOrderKey(collectionId) {
   return id ? `collection_${id}` : "";
 }
 
+export function reconcileCatalogOrderWithAddonGroups(savedOrderKeys = [], addonCatalogKeyGroups = []) {
+  const saved = Array.from(new Set((savedOrderKeys || []).filter(Boolean)));
+  const groups = (addonCatalogKeyGroups || [])
+    .map((keys) => Array.from(new Set((keys || []).filter(Boolean))))
+    .filter((keys) => keys.length);
+  const knownKeys = groups.flat();
+  const knownSet = new Set(knownKeys);
+  const savedIndex = new Map(saved.map((key, index) => [key, index]));
+  const regroupedKnown = groups.flatMap((keys) =>
+    [...keys].sort((left, right) => {
+      const leftIndex = savedIndex.has(left) ? savedIndex.get(left) : Number.MAX_SAFE_INTEGER;
+      const rightIndex = savedIndex.has(right) ? savedIndex.get(right) : Number.MAX_SAFE_INTEGER;
+      if (leftIndex !== rightIndex) {
+        return leftIndex - rightIndex;
+      }
+      return knownKeys.indexOf(left) - knownKeys.indexOf(right);
+    })
+  );
+
+  let nextKnownIndex = 0;
+  const reconciled = saved.map((key) => {
+    if (!knownSet.has(key)) {
+      return key;
+    }
+    const replacement = regroupedKnown[nextKnownIndex] || key;
+    nextKnownIndex += 1;
+    return replacement;
+  });
+  while (nextKnownIndex < regroupedKnown.length) {
+    reconciled.push(regroupedKnown[nextKnownIndex]);
+    nextKnownIndex += 1;
+  }
+  return Array.from(new Set(reconciled));
+}
+
 export function toDisplayTypeLabel(value) {
   const raw = String(value || "").trim();
   if (!raw) {

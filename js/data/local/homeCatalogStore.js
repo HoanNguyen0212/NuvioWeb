@@ -1,3 +1,4 @@
+import { reconcileCatalogOrderWithAddonGroups } from "../../core/addons/homeCatalogs.js";
 import { createProfileScopedStore } from "./profileScopedStore.js";
 
 const KEY = "homeCatalogPrefs";
@@ -123,6 +124,15 @@ export const HomeCatalogStore = {
     const savedSet = new Set(saved);
     const missing = unique(keys || []).filter((key) => key && !savedSet.has(key));
     const next = [...saved, ...missing];
+    if (!sameArray(current.order, next)) {
+      this.set({ order: next }, { silentSync: true });
+    }
+    return next;
+  },
+
+  reconcileAddonOrder(addonCatalogKeyGroups = []) {
+    const current = this.get();
+    const next = reconcileCatalogOrderWithAddonGroups(current.order, addonCatalogKeyGroups);
     if (!sameArray(current.order, next)) {
       this.set({ order: next }, { silentSync: true });
     }

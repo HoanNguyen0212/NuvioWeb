@@ -25,7 +25,7 @@
     "sync:tizen": "node ./scripts/sync-wrapper.mjs --tizen",
     "sync:webos": "node ./scripts/sync-wrapper.mjs --webos",
     "test": "node --test tests/*.test.mjs",
-    "test:webos4": "node --test tests/*.test.mjs js/core/player/*.test.mjs js/core/streams/*.test.mjs js/ui/screens/player/*.test.mjs js/ui/screens/search/*.test.mjs",
+    "test:webos4": "node --test tests/*.test.mjs js/core/player/*.test.mjs js/core/streams/*.test.mjs js/ui/screens/player/*.test.mjs js/ui/screens/search/*.test.mjs js/ui/screens/stream/*.test.mjs",
     "verify:webos53-policy": "node ./scripts/verify-webos53-policy.mjs",
     "sync:tizenbrew": "node ./scripts/sync-tizenbrew.mjs"
   },

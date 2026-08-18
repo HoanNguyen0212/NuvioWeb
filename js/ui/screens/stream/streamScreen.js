@@ -1,5 +1,10 @@
 import { Router } from "../../navigation/router.js";
 import { shouldWriteMarkup } from "../renderMarkupGuard.js";
+import {
+  focusStreamElement,
+  getStreamFocusLists,
+  invalidateStreamFocusNavigation
+} from "./streamFocusNavigation.js";
 import { ScreenUtils } from "../../navigation/screen.js";
 import { streamRepository } from "../../../data/repository/streamRepository.js";
 import { addonRepository } from "../../../data/repository/addonRepository.js";
@@ -968,6 +973,8 @@ export const StreamScreen = {
     this.hasRenderedStreamRouteShell = false;
     this.renderedMarkup = null;
     this.boundStreamListNode = null;
+    this.focusedElement = null;
+    invalidateStreamFocusNavigation(this);
     // Returning here from the player is a back navigation, not a fresh open, so
     // do not auto-resume or auto-play again. Otherwise exiting the player drops
     // back onto the stream list and immediately relaunches, looping forever.
@@ -1633,18 +1640,6 @@ export const StreamScreen = {
     return row.play || row.native || null;
   },
 
-  getCardRows() {
-    return Array.from(
-      this.container?.querySelectorAll(".stream-route-card-row[data-stream-row]") || []
-    )
-      .map((rowNode) => ({
-        row: Number(rowNode.dataset.streamRow || 0),
-        play: rowNode.querySelector('[data-card-action="play"]'),
-        native: rowNode.querySelector('[data-card-action="native"]')
-      }))
-      .filter((row) => row.play || row.native);
-  },
-
   isCardActionFocused(rowIndex, action) {
     return (
       this.focusState?.zone === "card" &&
@@ -1654,17 +1649,8 @@ export const StreamScreen = {
   },
 
   focusElement(target) {
-    if (!target) {
+    if (!focusStreamElement(this, target)) {
       return false;
-    }
-    this.container
-      .querySelectorAll(".focusable")
-      .forEach((node) => node.classList.remove("focused"));
-    target.classList.add("focused");
-    try {
-      target.focus({ preventScroll: true });
-    } catch (_) {
-      target.focus();
     }
 
     const chipTrack = target.closest(".stream-route-chip-track");
@@ -1849,9 +1835,7 @@ export const StreamScreen = {
   },
 
   getFocusLists() {
-    const chips = Array.from(this.container.querySelectorAll(".stream-route-chip.focusable"));
-    const rows = this.getCardRows();
-    return { chips, rows };
+    return getStreamFocusLists(this);
   },
 
   applyFocus() {
@@ -2355,6 +2339,7 @@ export const StreamScreen = {
       this.container.innerHTML = nextMarkup;
       this.renderedMarkup = nextMarkup;
       this.boundStreamListNode = null;
+      invalidateStreamFocusNavigation(this, { clearFocusedElement: true });
       this.bindAddonLogoFallbacks();
       ScreenUtils.indexFocusables(this.container);
       this.bindListScrollState();
@@ -2799,6 +2784,7 @@ export const StreamScreen = {
     }
     this.renderedMarkup = null;
     this.boundStreamListNode = null;
+    invalidateStreamFocusNavigation(this, { clearFocusedElement: true });
     ScreenUtils.hide(this.container);
   }
 };

@@ -8,6 +8,15 @@ function normalizeDisplayText(value) {
     .replace(/\\"/g, '"');
 }
 
+export function isUsableMetaPayload(meta) {
+  return Boolean(
+    meta
+    && typeof meta === "object"
+    && !Array.isArray(meta)
+    && Object.keys(meta).length > 0
+  );
+}
+
 class MetaRepository {
   constructor() {
     this.metaCache = new Map();
@@ -185,7 +194,7 @@ class MetaRepository {
   }
 
   mapMeta(meta) {
-    if (!meta) {
+    if (!isUsableMetaPayload(meta)) {
       return null;
     }
 

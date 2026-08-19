@@ -5,6 +5,7 @@ import {
   getStreamFocusLists,
   invalidateStreamFocusNavigation
 } from "./streamFocusNavigation.js";
+import { isPlayableStreamCandidate } from "./streamCandidatePolicy.js";
 import { ScreenUtils } from "../../navigation/screen.js";
 import { streamRepository } from "../../../data/repository/streamRepository.js";
 import { addonRepository } from "../../../data/repository/addonRepository.js";
@@ -377,86 +378,6 @@ function flattenStreams(streamResult) {
     });
   });
   return flattened;
-}
-
-function getStreamCandidateHost(url = "") {
-  try {
-    return String(new URL(String(url || "")).hostname || "").toLowerCase();
-  } catch (_) {
-    return "";
-  }
-}
-
-function getStreamCandidateText(stream = {}) {
-  return [stream.name, stream.title, stream.description]
-    .map((value) => String(value || ""))
-    .join("\n");
-}
-
-function getStreamAddonIdentity(stream = {}) {
-  return [
-    stream.addonId,
-    stream.addonName,
-    stream.addonBaseUrl,
-    stream.streamOrigin?.addonId,
-    stream.streamOrigin?.addonName,
-    stream.streamOrigin?.addonBaseUrl
-  ]
-    .map((value) => String(value || ""))
-    .join("\n");
-}
-
-function isPlayableStreamCandidate(stream) {
-  const url = String(stream?.url || stream?.externalUrl || stream?.raw?.url || stream?.raw?.externalUrl || "");
-  if (!url) {
-    return false;
-  }
-  const candidateText = getStreamCandidateText(stream);
-  const addonIdentity = getStreamAddonIdentity(stream);
-
-  // Some addon updates return promotional rows as ordinary stream objects.
-  // Match their stable text markers as the URL itself can look media-like.
-  if (
-    /\b(?:looking for donations?|donation needed|click here to donate)\b/i.test(candidateText) ||
-    /\/(?:donate|donation|telegram|tg|discord)\b/i.test(url)
-  ) {
-    return false;
-  }
-
-  // Pengu periodically republishes synthetic 2Peckle/Artemis HLS choices
-  // (including the advertised 5 Mbps and 15 Mbps rows). Both returned
-  // MEDIA_ERR_SRC_NOT_SUPPORTED in metadata probes on this Chromium 53 TV.
-  if (/pengu/i.test(addonIdentity) && /\b2Peckle\b[\s\S]*\bArtemis\b/i.test(candidateText)) {
-    return false;
-  }
-
-  // Filter out non-streamable ZIP archives (e.g. .mkv.zip)
-  if (/\.zip(?:$|\?)/i.test(url)) {
-    return false;
-  }
-  // Filter out 10Gbps Download-only web pages (hubcloud.cx / gpdl.hubcloud.cx)
-  if (/\b(?:hubcloud|gpdl\.hubcloud)\.cx\b/i.test(url)) {
-    return false;
-  }
-  // Filter out non-direct redirect shorteners that require browser interaction.
-  if (/\b(?:hub\.pyramid\.surf|hub\.latent\.click|bzzhr\.co)\b/i.test(url)) {
-    return false;
-  }
-
-  if (/hdhub/i.test(addonIdentity)) {
-    const host = getStreamCandidateHost(url);
-    // Live probes on the target LG TV showed that HDHub's rotating Worker,
-    // Castle, PixelDrain and cloudflarestorage mirrors all fail with media
-    // error 4. Keep only direct FSL and public R2 media hosts that reached
-    // loadedmetadata. This host-class policy survives mirror subdomain churn.
-    const isDirectFslHost = host === "cdn.fsl-buckets.life";
-    const isDirectR2Host = /(?:^|\.)r2\.dev$/i.test(host);
-    if (!isDirectFslHost && !isDirectR2Host) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 function mergeStreamItems(existing = [], incoming = []) {

@@ -8,25 +8,45 @@ const ADAPTERS = {
   tizen: tizenAdapter
 };
 
-function parseWebOsMajorVersion() {
-  const candidates = [
-    String(globalThis.PalmSystem?.deviceInfo || ""),
-    String(globalThis.webOSSystem?.deviceInfo || ""),
-    String(globalThis.navigator?.userAgent || "")
-  ].filter(Boolean);
+function webOsMajorFromChromium(chromiumMajor) {
+  const value = Number(chromiumMajor || 0);
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  // LG's engine generations are fixed for the webOS releases that this TV
+  // build supports: Chromium 38→webOS 3, 53→4, 68→5 and 79→6.
+  if (value <= 38) return 3;
+  if (value <= 53) return 4;
+  if (value <= 68) return 5;
+  if (value <= 79) return 6;
+  if (value <= 87) return 22;
+  if (value <= 94) return 23;
+  if (value <= 108) return 24;
+  if (value <= 120) return 25;
+  return 25;
+}
+
+export function parseWebOsMajorVersion(candidateValues = null) {
+  const candidates = Array.isArray(candidateValues)
+    ? candidateValues.map((value) => String(value || "")).filter(Boolean)
+    : [
+        String(globalThis.PalmSystem?.deviceInfo || ""),
+        String(globalThis.webOSSystem?.deviceInfo || ""),
+        String(globalThis.navigator?.userAgent || "")
+      ].filter(Boolean);
 
   const patterns = [
-    /web0s\.tv[\s\-\/]?(\d{1,2})/i,
-    /webos\.tv[\s\-\/]?(\d{1,2})/i,
-    /web0s[\s\-\/]?(\d{1,2})/i,
-    /webos[\s\-\/]?(\d{1,2})/i,
-    /chromium\/(\d{2,3})/i,
-    /chrome\/(\d{2,3})/i
+    { kind: "webos", expression: /web0s\.tv[\s\-\/]?(\d{1,2})/i },
+    { kind: "webos", expression: /webos\.tv[\s\-\/]?(\d{1,2})/i },
+    { kind: "webos", expression: /web0s[\s\-\/]?(\d{1,2})/i },
+    { kind: "webos", expression: /webos[\s\-\/]?(\d{1,2})/i },
+    { kind: "chromium", expression: /chromium\/(\d{2,3})/i },
+    { kind: "chromium", expression: /chrome\/(\d{2,3})/i }
   ];
 
   for (const candidate of candidates) {
     for (const pattern of patterns) {
-      const match = candidate.match(pattern);
+      const match = candidate.match(pattern.expression);
       if (!match) {
         continue;
       }
@@ -34,17 +54,7 @@ function parseWebOsMajorVersion() {
       if (!Number.isFinite(value) || value <= 0) {
         continue;
       }
-      if (/chrom(e|ium)\//i.test(pattern.source)) {
-        if (value <= 53) return 3;
-        if (value <= 68) return 4;
-        if (value <= 79) return 5;
-        if (value <= 87) return 6;
-        if (value <= 94) return 22;
-        if (value <= 108) return 23;
-        if (value <= 120) return 24;
-        return 25;
-      }
-      return value;
+      return pattern.kind === "chromium" ? webOsMajorFromChromium(value) : value;
     }
   }
   return 0;

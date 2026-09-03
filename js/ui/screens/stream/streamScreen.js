@@ -663,6 +663,28 @@ function renderStreamBadges(stream = {}, enabled = true, badgeSettings = null) {
   );
 }
 
+function renderStreamBadgeContents(stream = {}, enabled = true, badgeSettings = null) {
+  if (!enabled) {
+    return "";
+  }
+  const currentBadgeSettings = badgeSettings || StreamBadgeSettingsStore.snapshot();
+  const importedBadges = matchStreamBadges(stream, currentBadgeSettings.rules);
+  const sizeBytes = stream.behaviorHints?.videoSize;
+  const chips = [];
+  importedBadges.slice(0, STREAM_BADGE_LIMIT).forEach((badge) => {
+    const chip = renderImageBadgeChip(badge);
+    if (chip) {
+      chips.push(chip);
+    }
+  });
+  if (currentBadgeSettings.showFileSizeBadges !== false && sizeBytes != null) {
+    chips.push(
+      `<span class="stream-route-stream-badge size">${escapeHtml(t("streams_size", [formatBytes(sizeBytes)], `SIZE ${formatBytes(sizeBytes)}`))}</span>`
+    );
+  }
+  return chips.join("");
+}
+
 function resolveStreamBadgePlacement(badgeSettings = null) {
   const placement = String(
     (badgeSettings || StreamBadgeSettingsStore.snapshot()).badgePlacement || "BOTTOM"

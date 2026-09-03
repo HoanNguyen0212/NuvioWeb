@@ -1,196 +1,152 @@
-name: Propose upstream Nuvio update
+name: Watch upstream Nuvio updates
 
 on:
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: "Upstream release tag or branch (blank = latest published release)"
+        description: "Upstream release tag (e.g. 1.0.6, blank = latest published release)"
         required: false
         type: string
   schedule:
     - cron: "17 3 * * *"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
   issues: write
 
 concurrency:
-  group: propose-upstream-update
+  group: watch-upstream-update
   cancel-in-progress: false
 
 env:
   CANONICAL_BRANCH: webos4-chromium53
-  UPSTREAM_REPOSITORY: NuvioMedia/NuvioWeb
+  UPSTREAM_REPOSITORY: NuvioMedia/NuvioTVSmart
 
 jobs:
-  propose:
+  check-upstream:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Check out the canonical custom branch
         uses: actions/checkout@v4
         with:
-          ref: webos4-chromium53
+          ref: ${{ env.CANONICAL_BRANCH }}
           fetch-depth: 0
 
-      - name: Resolve requested upstream ref
-        id: upstream
+      - name: Resolve latest upstream release and fork base
+        id: resolve
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUESTED_REF: ${{ inputs.upstream_ref }}
         run: |
           set -euo pipefail
-          REF="${REQUESTED_REF//[[:space:]]/}"
-          if [ -z "$REF" ]; then
-            REF="$(gh api "repos/${UPSTREAM_REPOSITORY}/releases/latest" --jq .tag_name)"
+          if [ -n "$REQUESTED_REF" ]; then
+            UPSTREAM_TAG="${REQUESTED_REF//[[:space:]]/}"
+          else
+            UPSTREAM_TAG="$(gh release view --repo "${UPSTREAM_REPOSITORY}" --json tagName -q .tagName)"
           fi
-          if ! printf '%s' "$REF" | grep -Eq '^[A-Za-z0-9._/-]+$'; then
-            echo "Unsafe upstream ref: $REF" >&2
-            exit 1
-          fi
-          SAFE_REF="$(printf '%s' "$REF" | tr '/:' '--')"
-          echo "ref=$REF" >> "$GITHUB_OUTPUT"
-          echo "safe_ref=$SAFE_REF" >> "$GITHUB_OUTPUT"
-          echo "Resolved upstream ref: $REF" >> "$GITHUB_STEP_SUMMARY"
+          echo "upstream_tag=$UPSTREAM_TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream release: $UPSTREAM_TAG" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Fetch upstream source
-        id: fetch
+          # Resolve current fork incorporated upstream base from tags like v1.0.5+webos4.r5.1
+          FORK_BASE="$(git tag -l 'v*+webos4.*' | sed 's/^v//; s/+webos4.*//' | sort -V | tail -1)"
+          if [ -z "$FORK_BASE" ]; then
+            FORK_BASE="1.0.5"
+          fi
+          echo "fork_base=$FORK_BASE" >> "$GITHUB_OUTPUT"
+          echo "Current fork base: $FORK_BASE" >> "$GITHUB_STEP_SUMMARY"
+
+          # Normalize tags with or without leading 'v' for comparison
+          CLEAN_UPSTREAM="${UPSTREAM_TAG#v}"
+          CLEAN_BASE="${FORK_BASE#v}"
+
+          if [ "$CLEAN_UPSTREAM" = "$CLEAN_BASE" ]; then
+            echo "has_update=false" >> "$GITHUB_OUTPUT"
+            echo "Fork is already at upstream base $UPSTREAM_TAG." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "has_update=true" >> "$GITHUB_OUTPUT"
+            echo "New upstream release detected: $UPSTREAM_TAG (current fork base: $FORK_BASE)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Create or update tracking issue
+        if: steps.resolve.outputs.has_update == 'true'
         env:
-          UPSTREAM_REF: ${{ steps.upstream.outputs.ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.resolve.outputs.upstream_tag }}
+          BASE: ${{ steps.resolve.outputs.fork_base }}
         run: |
           set -euo pipefail
-          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git" 2>/dev/null || \
-            git remote set-url upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
-          git fetch --force upstream main
-          if git fetch --force upstream "refs/tags/${UPSTREAM_REF}:refs/tags/${UPSTREAM_REF}"; then
-            TARGET="$(git rev-parse "${UPSTREAM_REF}^{commit}")"
-          else
-            git fetch --force upstream "$UPSTREAM_REF"
-            TARGET="$(git rev-parse FETCH_HEAD)"
-          fi
-          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
-          echo "Upstream commit: $TARGET" >> "$GITHUB_STEP_SUMMARY"
+          TITLE="[Upstream Update] NuvioTVSmart $TAG (current fork base: $BASE)"
 
-      - name: Check whether update is already integrated
-        id: integrated
-        env:
-          TARGET: ${{ steps.fetch.outputs.target }}
-        run: |
-          if git merge-base --is-ancestor "$TARGET" HEAD; then
-            echo "value=true" >> "$GITHUB_OUTPUT"
-            echo "The upstream ref is already contained in ${CANONICAL_BRANCH}." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "value=false" >> "$GITHUB_OUTPUT"
+          # Prevent duplicate open issues for the same upstream release
+          EXISTING_ISSUE="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number -q '.[0].number // empty')"
+          if [ -n "$EXISTING_ISSUE" ]; then
+            echo "Tracking issue #$EXISTING_ISSUE already exists for $TAG; skipping."
+            exit 0
           fi
 
-      - name: Merge upstream on an isolated proposal branch
-        if: steps.integrated.outputs.value != 'true'
-        id: merge
-        continue-on-error: true
-        env:
-          TARGET: ${{ steps.fetch.outputs.target }}
-          UPSTREAM_REF: ${{ steps.upstream.outputs.ref }}
-          SAFE_REF: ${{ steps.upstream.outputs.safe_ref }}
-        run: |
-          set -euo pipefail
-          BRANCH="update/upstream-${SAFE_REF}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -C "$BRANCH" "origin/${CANONICAL_BRANCH}"
-          set +e
-          git merge --no-ff --no-edit "$TARGET"
-          MERGE_STATUS=$?
-          set -e
-          if [ "$MERGE_STATUS" -ne 0 ]; then
-            git diff --name-only --diff-filter=U | sort > /tmp/upstream-conflicts.txt
-            {
-              echo "status=conflict"
-              echo "branch=$BRANCH"
-              echo "conflicts<<EOF"
-              cat /tmp/upstream-conflicts.txt
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-            git merge --abort || true
-            exit 1
-          fi
-          echo "status=clean" >> "$GITHUB_OUTPUT"
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git" 2>/dev/null || true
+          git fetch --quiet upstream --tags
 
-      - name: Report merge conflicts as an issue
-        if: steps.integrated.outputs.value != 'true' && steps.merge.outcome == 'failure'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          UPSTREAM_REF: ${{ steps.upstream.outputs.ref }}
-          TARGET: ${{ steps.fetch.outputs.target }}
-          CONFLICTS: ${{ steps.merge.outputs.conflicts }}
-        run: |
-          set -euo pipefail
-          TITLE="Upstream update blocked: ${UPSTREAM_REF}"
-          {
-            echo "The automatic merge into \`${CANONICAL_BRANCH}\` found conflicts."
-            echo
-            echo "Upstream commit: \`${TARGET}\`"
-            echo
-            echo "Conflicting files:"
-            echo '```text'
-            printf '%s\n' "$CONFLICTS"
-            echo '```'
-            echo
-            echo "Resolve these files on a temporary update branch. Do not hard-reset the canonical custom branch."
-          } > /tmp/upstream-issue.md
-          ISSUE_NUMBER="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -n 1)"
-          if [ -n "$ISSUE_NUMBER" ]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/upstream-issue.md
-          else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file /tmp/upstream-issue.md
+          # Resolve tag names for git log
+          TARGET_TAG="$TAG"
+          if ! git rev-parse "$TARGET_TAG" >/dev/null 2>&1 && git rev-parse "v$TARGET_TAG" >/dev/null 2>&1; then
+            TARGET_TAG="v$TARGET_TAG"
           fi
-          cat /tmp/upstream-issue.md >> "$GITHUB_STEP_SUMMARY"
-          exit 1
 
-      - name: Push clean update proposal
-        if: steps.integrated.outputs.value != 'true' && steps.merge.outcome == 'success'
-        env:
-          BRANCH: ${{ steps.merge.outputs.branch }}
-        run: git push --force-with-lease origin "HEAD:refs/heads/${BRANCH}"
-
-      - name: Open or refresh update pull request
-        if: steps.integrated.outputs.value != 'true' && steps.merge.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ steps.merge.outputs.branch }}
-          UPSTREAM_REF: ${{ steps.upstream.outputs.ref }}
-          TARGET: ${{ steps.fetch.outputs.target }}
-        run: |
-          set -euo pipefail
-          {
-            echo "## Upstream update"
-            echo
-            echo "Merges \`${UPSTREAM_REPOSITORY}@${UPSTREAM_REF}\` (\`${TARGET}\`) into \`${CANONICAL_BRANCH}\`."
-            echo
-            echo "## Safety"
-            echo
-            echo "- This PR was created from the canonical custom branch; it never resets that branch."
-            echo "- Public CI uses placeholder runtime values only."
-            echo "- Do not merge until Chromium 53 build/package checks pass."
-            echo "- Do not create a stable tag until physical TV navigation and playback acceptance pass."
-            echo
-            echo "## Required manual acceptance"
-            echo
-            echo "- [ ] Cold boot and Home shell"
-            echo "- [ ] Search and Magic Remote keyboard dismissal"
-            echo "- [ ] Detail, stream selection, HLS/DASH playback and subtitles"
-            echo "- [ ] Settings, Library, See All and root sidebar navigation"
-            echo "- [ ] Cloud addon sync and stream filtering"
-          } > /tmp/upstream-pr.md
-          PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$BRANCH" --json number --jq '.[0].number // empty')"
-          if [ -n "$PR_NUMBER" ]; then
-            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/upstream-pr.md
-          else
-            gh pr create \
-              --repo "$GITHUB_REPOSITORY" \
-              --base "$CANONICAL_BRANCH" \
-              --head "$BRANCH" \
-              --title "chore(webos4): integrate upstream ${UPSTREAM_REF}" \
-              --body-file /tmp/upstream-pr.md
+          SOURCE_BASE="$BASE"
+          if ! git rev-parse "$SOURCE_BASE" >/dev/null 2>&1 && git rev-parse "v$SOURCE_BASE" >/dev/null 2>&1; then
+            SOURCE_BASE="v$SOURCE_BASE"
           fi
+
+          COMMITS="$(git log --oneline --no-decorate "${SOURCE_BASE}..${TARGET_TAG}" 2>/dev/null | head -40 || echo '(unable to list commits between base and tag)')"
+
+          INTERSECTING="$(comm -12 \
+            <(git diff --name-only "${SOURCE_BASE}" "${TARGET_TAG}" 2>/dev/null | sort) \
+            <(git diff --name-only "${SOURCE_BASE}" HEAD 2>/dev/null | sort) | head -40 || true)"
+
+          cat <<EOF > /tmp/upstream-issue.md
+          Upstream **${UPSTREAM_REPOSITORY}** đã phát hành phiên bản mới: **${TAG}**.
+          Nhánh stable của fork (\`${CANONICAL_BRANCH}\`) hiện đang ở base: **${BASE}**.
+
+          > ⚠️ **QUY TẮC AN TOÀN:**
+          > - **KHÔNG** tự động merge toàn bộ upstream vào nhánh \`${CANONICAL_BRANCH}\`.
+          > - **KHÔNG** auto-publish release.
+          > - Chỉ **selective-port** các bản sửa lỗi và tính năng an toàn, kiểm tra tính tương thích với Chromium 53 trước khi merge.
+
+          ## Upstream Commits
+          \`\`\`text
+          ${COMMITS}
+          \`\`\`
+
+          ## Các File Trùng Lặp (Dự Báo Vùng Cần Kiểm Tra Kỹ)
+          \`\`\`text
+          ${INTERSECTING:-Không có file trùng lặp trực tiếp}
+          \`\`\`
+
+          ## Checklist Nghiệm Thu Trước Khi Merge & Release
+          - [ ] Tạo nhánh feature riêng: \`test/webos4-...\` từ \`${CANONICAL_BRANCH}\`.
+          - [ ] Kiểm tra \`scripts/compatibilityPolicy.mjs\` giữ nguyên target 4.0.0 / Chromium 53.
+          - [ ] Bảo toàn các fix đặc thù:
+            - \`js/platform/index.js\` (nhận diện Chromium 53 -> webOS 4)
+            - \`js/ui/components/gridPosterRecycler.js\` (recycling poster See All/Discover)
+            - \`js/core/util/catalogEntryMapper.js\` (lọc malformed entry)
+            - \`js/core/profile/librarySyncService.js\` (bảo vệ addon khi sync rỗng)
+            - \`js/core/profile/homeCatalogSettingsSyncService.js\` (merge catalog cloud/local)
+            - \`js/ui/screens/library/libraryScreen.js\` (chống chớp màn hình khi sync nền)
+          - [ ] Các static gates đều pass:
+            - \`npm run check:source\`
+            - \`npm run check:no-undef\`
+            - \`npm run check:legacy-regex\`
+            - \`npm run check:legacy-css\`
+            - \`npm run verify:webos53-policy\`
+            - \`npm run test:webos4\`
+          - [ ] Deploy và nghiệm thu thực tế trên TV LG webOS 4 vật lý.
+          - [ ] Fast-forward merge vào \`${CANONICAL_BRANCH}\`, tạo tag \`v${TAG#v}+webos4.r<gen>.<rev>\`.
+          - [ ] GitHub Actions tạo Draft Release -> kiểm tra file IPK -> Publish thủ công.
+          EOF
+
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TITLE" \
+            --body-file /tmp/upstream-issue.md

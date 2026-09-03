@@ -1,0 +1,174 @@
+name: Release legacy webOS 4 IPK (Draft)
+
+on:
+  push:
+    tags:
+      - 'v*+webos4.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build (e.g. v1.0.5+webos4.r5.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-legacy-webos53-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+\+webos4\.[a-z0-9.]+$'; then
+            echo "::error::Tag '$TAG' does not follow required version scheme 'v<upstream>+webos4.<generation>.<revision>', e.g. 'v1.0.5+webos4.r5.1'"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Inject and validate local.properties
+        env:
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES || secrets.NUVIO_LOCAL_PROPERTIES || secrets.WEBOS_LOCAL_PROPERTIES }}
+        run: |
+          if [ -z "${LOCAL_PROPERTIES//[[:space:]]/}" ]; then
+            echo "::error::LOCAL_PROPERTIES (or NUVIO_LOCAL_PROPERTIES) secret is required to build a release IPK with configured runtime environment."
+            exit 1
+          fi
+          printf '%s\n' "$LOCAL_PROPERTIES" > local.properties
+          chmod 600 local.properties
+
+      - name: Gate 1 — Check source integrity
+        run: npm run check:source
+
+      - name: Gate 2 — Check no undeclared identifiers
+        run: npm run check:no-undef
+
+      - name: Gate 3 — Verify Chromium 53 policy
+        run: npm run verify:webos53-policy
+
+      - name: Gate 4 — Run webOS 4 test suite
+        run: npm run test:webos4
+
+      - name: Gate 5 — Run source lint
+        run: npm run lint
+
+      - name: Build and package webOS candidate
+        env:
+          NUVIO_REQUIRE_LOCAL_PROPERTIES: "1"
+          NUVIO_BUILD_METAFILE: "1"
+          NUVIO_BUILD_LABEL: ${{ steps.tag.outputs.tag }}
+        run: npm run package:webos
+
+      - name: Gate 6 — Check legacy RegExp compatibility
+        run: npm run check:legacy-regex
+
+      - name: Report — Chromium 53 CSS fallback coverage
+        run: npm run check:legacy-css
+
+      - name: Gate 7 — Generate legacy bundle report
+        run: node scripts/analyze-legacy-bundle.mjs
+
+      - name: Gate 8 — Verify unpacked package and lazy chunks
+        run: node scripts/verify-legacy-webos-package.mjs
+
+      - name: Normalize artifact names and compute checksums
+        id: artifact
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          set -- space.nuvio.webos_*_all.ipk
+          if [ ! -e "$1" ]; then
+            echo "::error::Expected webOS package was not created"
+            exit 1
+          fi
+          IPK_FILE="$1"
+          TARGET_IPK="NuvioTV-webOS-${TAG}.ipk"
+          mv "$IPK_FILE" "$TARGET_IPK"
+          sha256sum "$TARGET_IPK" > "${TARGET_IPK}.sha256"
+          SHA256="$(awk '{print $1}' "${TARGET_IPK}.sha256")"
+          SIZE="$(wc -c < "$TARGET_IPK" | tr -d ' ')"
+          echo "target_ipk=$TARGET_IPK" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+          echo "IPK: $TARGET_IPK ($SIZE bytes, SHA-256: $SHA256)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate draft release notes
+        id: notes
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          SHA256="${{ steps.artifact.outputs.sha256 }}"
+          SIZE="${{ steps.artifact.outputs.size }}"
+          cat <<EOF > /tmp/release-notes.md
+          ## Nuvio TV (webOS 4 / Chromium 53) - ${TAG}
+
+          > ⚠️ **DRAFT RELEASE - KHÔNG CÀI CHO MỤC ĐÍCH SẢN XUẤT CHO ĐẾN KHI TEST TV THẬT**
+          > Release này được tạo tự động ở trạng thái **DRAFT**. Chỉ bấm Publish sau khi đã cài file IPK lên TV LG webOS 4 vật lý và nghiệm thu thực tế bằng Magic Remote.
+
+          ### Thông tin Artifact
+          - **File:** \`NuvioTV-webOS-${TAG}.ipk\`
+          - **Kích thước:** ${SIZE} bytes
+          - **SHA-256:** \`${SHA256}\`
+          - **Target:** LG webOS 4.x (Chromium 53 floor)
+          - **Source Tag:** \`${TAG}\`
+
+          ### Các Gate Kiểm Tra Đã Vượt Qua
+          - [x] Integrity check (không conflict marker, CSS hợp lệ)
+          - [x] Static scope check (\`check:no-undef\` không có biến mồ côi)
+          - [x] Chromium 53 compatibility policy (target Chromium 53, webOS 4.0.0)
+          - [x] WebOS 4 test suite (toàn bộ 44 tests pass)
+          - [x] Acorn ECMAScript 2016 syntax parsing trên toàn bộ bundle và lazy chunks
+          - [x] RegExp compatibility check (không lookbehind, không named groups, không dotAll 's')
+          - [x] Bundle size budget check (startup bundle <= 750 KB)
+          - [x] Runtime environment configuration từ \`LOCAL_PROPERTIES\`
+
+          ### Quy trình Nghiệm thu trước khi Publish
+          1. Tải \`NuvioTV-webOS-${TAG}.ipk\` về máy hoặc thiết bị Termux.
+          2. Cài đặt lên TV: \`ares-install NuvioTV-webOS-${TAG}.ipk -d <tv-device>\`.
+          3. Mở ứng dụng, kiểm tra:
+             - Trang chủ tải đầy đủ poster và Continue Watching.
+             - Điều hướng D-pad mượt mà.
+             - Mở Xem tất cả (See All) và cuộn sâu để xác nhận poster recycler hoạt động.
+             - Vào Thư viện và Cài đặt.
+             - Thử phát một luồng video (stream selection và player).
+          4. Nếu tất cả đạt chuẩn: Chuyển trạng thái Release từ **Draft** sang **Published**.
+          5. Nếu có lỗi: Xóa Draft release, điều tra và sửa trên nhánh feature.
+          EOF
+
+      - name: Create Draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Nuvio TV webOS 4 ${{ steps.tag.outputs.tag }} (Draft)
+          draft: true
+          prerelease: false
+          body_path: /tmp/release-notes.md
+          files: |
+            ${{ steps.artifact.outputs.target_ipk }}
+            ${{ steps.artifact.outputs.target_ipk }}.sha256
+            .cache/legacy-analysis/bundle-analysis.md
+            .cache/legacy-package-verification/verification.json

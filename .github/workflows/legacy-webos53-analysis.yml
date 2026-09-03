@@ -6,6 +6,7 @@ on:
     branches:
       - webos4-chromium53
       - legacy-webos53-lite
+      - "test/webos4-*"
     paths:
       - "js/**"
       - "css/**"
@@ -51,13 +52,8 @@ jobs:
       - name: Verify Chromium 53 policy
         run: npm run verify:webos53-policy
 
-      - name: Run tests when the upstream checkout contains tests
-        run: |
-          if compgen -G 'tests/*.test.mjs' > /dev/null; then
-            npm test
-          else
-            echo 'No tests/*.test.mjs files are present in this upstream revision; skipping.'
-          fi
+      - name: Run webOS 4 test suite
+        run: npm run test:webos4
 
       - name: Run source lint
         run: npm run lint

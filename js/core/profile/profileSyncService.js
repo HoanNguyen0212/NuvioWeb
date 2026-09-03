@@ -1,4 +1,5 @@
 import { AuthManager } from "../auth/authManager.js";
+import { LocalStore } from "../storage/localStore.js";
 import { MAX_PROFILES, ProfileManager } from "./profileManager.js";
 import { SupabaseApi } from "../../data/remote/supabase/supabaseApi.js";
 

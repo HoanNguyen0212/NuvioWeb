@@ -5,6 +5,7 @@ import eslintConfigPrettier from "eslint-config-prettier";
 const runtimeGlobals = {
   ...globals.browser,
   ...globals.node,
+  __NUVIO_APP_VERSION__: "readonly",
   PalmSystem: "readonly",
   tizen: "readonly",
   webOS: "readonly",

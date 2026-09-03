@@ -6,6 +6,7 @@ on:
     branches:
       - webos4-chromium53
       - legacy-webos53-lite
+      - "test/webos4-*"
   pull_request:
     branches:
       - webos4-chromium53
@@ -34,16 +35,17 @@ jobs:
       - name: Install exact dependencies
         run: npm ci
 
+      - name: Gate 1 — Check source integrity
+        run: npm run check:source
+
+      - name: Gate 2 — Check no undeclared identifiers
+        run: npm run check:no-undef
+
       - name: Verify Chromium 53 policy
         run: npm run verify:webos53-policy
 
-      - name: Run tests when present
-        run: |
-          if compgen -G 'tests/*.test.mjs' > /dev/null; then
-            npm test
-          else
-            echo 'No tests/*.test.mjs files are present in this upstream revision; skipping.'
-          fi
+      - name: Run webOS 4 test suite
+        run: npm run test:webos4
 
       - name: Run source lint
         run: npm run lint
@@ -56,6 +58,12 @@ jobs:
           NUVIO_REQUIRE_LOCAL_PROPERTIES: "1"
           NUVIO_BUILD_METAFILE: "1"
         run: npm run package:webos
+
+      - name: Gate 6 — Check legacy RegExp compatibility
+        run: npm run check:legacy-regex
+
+      - name: Report — Chromium 53 CSS fallback coverage
+        run: npm run check:legacy-css
 
       - name: Generate bundle report
         run: node scripts/analyze-legacy-bundle.mjs

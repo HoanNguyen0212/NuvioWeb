@@ -90,7 +90,7 @@ const orderedIncludes = [
   'href="css/nuvio-legacy-performance.css"',
   'src="boot-guard.js"',
   'src="nuvio.env.js"',
-  'loadScript("app.bundle.js?v=20260903r5c7")'
+  'loadScript("app.bundle.js?v='
 ];
 let previousIndex = -1;
 for (const include of orderedIncludes) {
@@ -98,6 +98,10 @@ for (const include of orderedIncludes) {
   assert(includeIndex > previousIndex, `Missing or incorrectly ordered index include: ${include}`);
   previousIndex = includeIndex;
 }
+assert(
+  /loadScript\("app\.bundle\.js\?v=[a-zA-Z0-9.+_-]+"\)/.test(indexHtml),
+  "Generated index.html is missing a valid cache-busting loadScript() invocation for app.bundle.js"
+);
 assert(indexHtml.includes('"minChrome":53'), "Generated compatibility gate is not Chrome 53");
 assert(indexHtml.includes('"minVersion":4'), "Generated compatibility gate is not webOS 4");
 assert(indexHtml.includes('__NUVIO_BOOT_EPOCH__'), "Generated package is missing the boot epoch");

@@ -68,6 +68,16 @@ for (const include of [
 assert(packageJson.scripts?.["package:webos"], "package:webos script is missing");
 assert(packageJson.scripts?.test, "test script is missing");
 
+const [polyfillsSource, performanceCssSource] = await Promise.all([
+  read("nuvio-legacy-polyfills.js"),
+  read("css/nuvio-legacy-performance.css")
+]);
+assert(polyfillsSource.includes("Promise.prototype.finally"), "Missing Promise.prototype.finally polyfill");
+assert(polyfillsSource.includes("Object.fromEntries"), "Missing Object.fromEntries polyfill");
+assert(polyfillsSource.includes("Array.prototype.flat"), "Missing Array.prototype.flat polyfill");
+assert(performanceCssSource.includes("-webkit-flex"), "Missing -webkit-flex layout fallback");
+assert(performanceCssSource.includes("flex-wrap: wrap"), "Missing flex-wrap grid fallback");
+
 console.log(
   JSON.stringify({
     status: "ok",

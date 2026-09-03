@@ -90,7 +90,7 @@ const orderedIncludes = [
   'href="css/nuvio-legacy-performance.css"',
   'src="boot-guard.js"',
   'src="nuvio.env.js"',
-  'loadScript("app.bundle.js?v=20260903r5c6")'
+  'loadScript("app.bundle.js?v=20260903r5c7")'
 ];
 let previousIndex = -1;
 for (const include of orderedIncludes) {
@@ -169,6 +169,15 @@ for (const filePath of applicationJavaScript) {
 const startupBytes = (await stat(path.join(appDir, "app.bundle.js"))).size;
 assert(startupBytes <= 750_000, `Startup bundle regression: ${startupBytes} bytes`);
 assert(totalApplicationBytes <= 2_500_000, `Total JavaScript regression: ${totalApplicationBytes} bytes`);
+
+const unsupportedRegexPattern = /\(\?<[=!0-9A-Za-z_]/;
+for (const filePath of javascriptFiles) {
+  const source = await readFile(filePath, "utf8");
+  assert(
+    !unsupportedRegexPattern.test(source),
+    `Emitted file contains Chromium 53 unsupported RegExp feature: ${filePath}`
+  );
+}
 
 const report = {
   verifiedAt: new Date().toISOString(),

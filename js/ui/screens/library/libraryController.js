@@ -994,6 +994,9 @@ export class LibraryController {
   }
 
   async refreshNow() {
+    if (this.state.isSyncing) {
+      return false;
+    }
     const startedAt = Date.now();
     this.setState({ isSyncing: true, errorMessage: null });
     try {

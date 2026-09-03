@@ -249,6 +249,42 @@ function buildLocalPayload(profileId = null) {
   });
 }
 
+export function mergeRemoteItemsWithLocal(rawItems = [], localPayload = {}) {
+  const localItems = Array.isArray(localPayload.items) ? localPayload.items : [];
+  const localKeys = new Set();
+  localItems.forEach((item) => {
+    const key = syncItemKey(item);
+    if (key) {
+      localKeys.add(key);
+    }
+  });
+
+  const seen = new Set();
+  const merged = [];
+  (rawItems || [])
+    .map((item, index) => normalizeSyncItem(item, index))
+    .filter(itemHasIdentity)
+    .sort((left, right) => left.order - right.order)
+    .forEach((item) => {
+      const key = syncItemKey(item);
+      if (!key || seen.has(key) || !localKeys.has(key)) {
+        return;
+      }
+      seen.add(key);
+      merged.push(item);
+    });
+  localItems.forEach((item) => {
+    const key = syncItemKey(item);
+    if (!key || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    merged.push(normalizeSyncItem(item, merged.length));
+  });
+
+  return merged.map((item, index) => ({ ...item, order: index }));
+}
+
 function decodePayload(settingsJson = {}, localPayload = {}) {
   if (!isPlainObject(settingsJson)) {
     return null;
@@ -269,10 +305,7 @@ function decodePayload(settingsJson = {}, localPayload = {}) {
       )
         ? Boolean(settingsJson.hide_catalog_underline)
         : undefined,
-      items: rawItems
-        .map((item, index) => normalizeSyncItem(item, index))
-        .filter(itemHasIdentity)
-        .sort((left, right) => left.order - right.order)
+      items: mergeRemoteItemsWithLocal(rawItems, localPayload)
     };
   }
 

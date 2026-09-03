@@ -20,6 +20,7 @@ import {
   focusWithoutAutoScroll,
   setLegacySidebarExpanded
 } from "../../components/sidebarNavigation.js";
+import { recycleGridPosterImages } from "../../components/gridPosterRecycler.js";
 
 const POSTER_HOLD_DELAY_MS = 650;
 const PICKER_MENU_EXIT_MS = 160;
@@ -321,6 +322,7 @@ export const DiscoverScreen = {
     this.pendingPosterOptionsFocusKey = "";
     this.pendingPosterHoldTarget = null;
     this.pendingPosterHoldTimer = null;
+    this.posterRecycleFrame = null;
     this.pickerOptionIndex = 0;
     this.lastFocusedAction = "discoverFilterType";
     this.lastFocusedKey = null;
@@ -445,7 +447,7 @@ export const DiscoverScreen = {
                  <div class="seeall-card-poster-wrap">
                    ${
                      item.poster
-                       ? `<img class="seeall-card-poster-image" src="${escapeHtml(item.poster)}" alt="${escapeHtml(item.name || "content")}" loading="lazy" decoding="async" />`
+                       ? `<img class="seeall-card-poster-image" data-src="${escapeHtml(item.poster)}" alt="${escapeHtml(item.name || "content")}" decoding="async" />`
                        : `<div class="seeall-card-poster placeholder"></div>`
                    }
                    ${isTitleItemWatched(item, this.watchedTitleIds) ? renderTitleWatchedBadge() : ""}
@@ -762,6 +764,7 @@ export const DiscoverScreen = {
     ScreenUtils.indexFocusables(this.container);
     this.buildNavigationModel();
     this.bindCardEvents();
+    this.schedulePosterRecycle();
 
     const focusedFilter = this.container.querySelector(".discover-filter.focused");
     if (focusedFilter instanceof HTMLElement) {
@@ -1231,6 +1234,7 @@ export const DiscoverScreen = {
     if (Number.isFinite(nextScrollTop)) {
       this.savedScrollTop = nextScrollTop;
     }
+    this.schedulePosterRecycle();
     if (shouldLoadMore) {
       this.loadNextPage({ preserveViewport: true });
     }
@@ -1456,6 +1460,7 @@ export const DiscoverScreen = {
     this.bindCardEvents();
     this.bindShellEvents();
     this.bindPointerEvents();
+    this.schedulePosterRecycle();
     if (this.pendingRestoreFocus) {
       const scrollMode = this.preserveViewportOnNextRender ? "none" : "center";
       this.pendingRestoreFocus = false;
@@ -1491,6 +1496,24 @@ export const DiscoverScreen = {
     });
   },
 
+  schedulePosterRecycle() {
+    if (this.posterRecycleFrame != null) {
+      return;
+    }
+    const run = () => {
+      this.posterRecycleFrame = null;
+      recycleGridPosterImages({
+        shell: this.getContentScroller(),
+        grid: this.container?.querySelector(".discover-grid") || null
+      });
+    };
+    if (typeof requestAnimationFrame === "function") {
+      this.posterRecycleFrame = requestAnimationFrame(run);
+      return;
+    }
+    this.posterRecycleFrame = setTimeout(run, 0);
+  },
+
   bindShellEvents() {
     const scroller = this.getContentScroller();
     if (!scroller || scroller.__discoverScrollBound) {
@@ -1501,6 +1524,7 @@ export const DiscoverScreen = {
       "scroll",
       () => {
         this.savedScrollTop = Number(scroller.scrollTop || 0);
+        this.schedulePosterRecycle();
         if (this.shouldAutoLoadMoreFromScroll(scroller)) {
           this.loadNextPage({ preserveViewport: true });
         }
@@ -1706,6 +1730,10 @@ export const DiscoverScreen = {
 
   cleanup() {
     this.loadToken = (this.loadToken || 0) + 1;
+    if (this.posterRecycleFrame != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(this.posterRecycleFrame);
+    }
+    this.posterRecycleFrame = null;
     this.cancelScheduledRender();
     this.clearClosingPicker();
     this.lastRenderedOpenPicker = null;

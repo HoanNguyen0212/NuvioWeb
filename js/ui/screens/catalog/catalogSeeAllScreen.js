@@ -6,6 +6,7 @@ import { Environment } from "../../../platform/environment.js";
 import { LayoutPreferences } from "../../../data/local/layoutPreferences.js";
 import { I18n } from "../../../i18n/index.js";
 import { focusWithoutAutoScroll } from "../../components/sidebarNavigation.js";
+import { recycleGridPosterImages } from "../../components/gridPosterRecycler.js";
 import {
   posterItemFromNode,
   PosterOptionsDialogController
@@ -189,6 +190,7 @@ export const CatalogSeeAllScreen = {
     this.posterOptionsFocusKey = "";
     this.pendingPosterHoldTarget = null;
     this.pendingPosterHoldTimer = null;
+    this.posterRecycleFrame = null;
     await this.refreshWatchedTitleIds();
 
     if (
@@ -375,6 +377,7 @@ export const CatalogSeeAllScreen = {
     if (Number.isFinite(nextScrollTop)) {
       this.savedScrollTop = nextScrollTop;
     }
+    this.schedulePosterRecycle();
     if (shouldLoadMore) {
       this.loadNextPage({ preserveViewport: true });
     }
@@ -626,7 +629,7 @@ export const CatalogSeeAllScreen = {
             <div class="seeall-card-poster-wrap">
               ${
                 item.poster
-                  ? `<img class="seeall-card-poster-image" src="${escapeHtml(item.poster)}" alt="${escapeHtml(item.name || "content")}" loading="lazy" decoding="async" />`
+                  ? `<img class="seeall-card-poster-image" data-src="${escapeHtml(item.poster)}" alt="${escapeHtml(item.name || "content")}" decoding="async" />`
                   : `<div class="seeall-card-poster placeholder"></div>`
               }
               ${isTitleItemWatched(item, this.watchedTitleIds) ? renderTitleWatchedBadge() : ""}
@@ -666,6 +669,7 @@ export const CatalogSeeAllScreen = {
     this.buildNavigationModel();
     this.bindCardEvents();
     this.bindShellEvents();
+    this.schedulePosterRecycle();
     if (this.pendingRestoreFocus) {
       const scrollMode = this.preserveViewportOnNextRender ? "none" : "center";
       this.pendingRestoreFocus = false;
@@ -713,6 +717,24 @@ export const CatalogSeeAllScreen = {
     return this.openDetailFromNode(card);
   },
 
+  schedulePosterRecycle() {
+    if (this.posterRecycleFrame != null) {
+      return;
+    }
+    const run = () => {
+      this.posterRecycleFrame = null;
+      recycleGridPosterImages({
+        shell: this.container?.querySelector(".seeall-shell") || null,
+        grid: this.container?.querySelector(".seeall-grid") || null
+      });
+    };
+    if (typeof requestAnimationFrame === "function") {
+      this.posterRecycleFrame = requestAnimationFrame(run);
+      return;
+    }
+    this.posterRecycleFrame = setTimeout(run, 0);
+  },
+
   bindShellEvents() {
     const shell = this.container?.querySelector(".seeall-shell") || null;
     if (!shell || shell.__catalogSeeAllShellBound) {
@@ -723,6 +745,7 @@ export const CatalogSeeAllScreen = {
       "scroll",
       () => {
         this.savedScrollTop = Number(shell.scrollTop || 0);
+        this.schedulePosterRecycle();
         if (this.shouldAutoLoadMoreFromScroll(shell)) {
           this.loadNextPage({ preserveViewport: true });
         }
@@ -783,6 +806,10 @@ export const CatalogSeeAllScreen = {
 
   cleanup() {
     this.loadToken = (this.loadToken || 0) + 1;
+    if (this.posterRecycleFrame != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(this.posterRecycleFrame);
+    }
+    this.posterRecycleFrame = null;
     this.cancelPendingPosterHold();
     this.posterOptionsController?.destroy?.({ restoreFocus: false });
     this.posterOptionsController = null;

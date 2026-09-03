@@ -20,7 +20,7 @@ const appName = "Nuvio TV";
 const webOsServiceId = "space.nuvio.webos.service";
 const webOsServiceSourceDir = path.join(rootDir, "services", "webos");
 const webOsRuntimeScriptPath = "assets/libs/webOSTV.js";
-const appBundleCacheKey = "20260903r5c3";
+const appBundleCacheKey = "20260903r5c4";
 
 async function assertDistExists() {
   try {

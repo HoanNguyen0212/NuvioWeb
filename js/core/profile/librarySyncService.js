@@ -106,6 +106,16 @@ function extractAddonEntries(rows = []) {
 
 function applyPulledAddons(rows = []) {
   const entries = extractAddonEntries(rows);
+  if (!entries.length) {
+    const localUrls = addonRepository.getInstalledAddonUrls();
+    if (localUrls.length) {
+      console.warn(
+        "Addon sync pull returned no rows while addons exist locally; keeping the local list",
+        { localCount: localUrls.length }
+      );
+      return null;
+    }
+  }
   const urls = entries.map((entry) => entry.url).filter(Boolean);
   const currentNames = addonRepository.getAddonDisplayNameOverrides();
   addonRepository.setAddonDisplayNameOverrides(
@@ -123,6 +133,11 @@ function applyPulledAddons(rows = []) {
 
 async function replaceLocalAddons(rows, source) {
   const urls = applyPulledAddons(rows);
+  if (urls === null) {
+    const localUrls = addonRepository.getInstalledAddonUrls();
+    recordPullStatus("ok", { count: localUrls.length, source, keptLocal: true });
+    return localUrls;
+  }
   await addonRepository.setAddonOrder(urls, { silent: true });
   recordPullStatus("ok", { count: urls.length, source });
   return urls;

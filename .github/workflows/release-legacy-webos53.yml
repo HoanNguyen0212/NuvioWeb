@@ -54,13 +54,16 @@ jobs:
 
       - name: Inject and validate local.properties
         env:
-          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES || secrets.NUVIO_LOCAL_PROPERTIES || secrets.WEBOS_LOCAL_PROPERTIES }}
+          SECRET_LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+          SECRET_NUVIO_LOCAL_PROPERTIES: ${{ secrets.NUVIO_LOCAL_PROPERTIES }}
+          SECRET_WEBOS_LOCAL_PROPERTIES: ${{ secrets.WEBOS_LOCAL_PROPERTIES }}
         run: |
-          if [ -z "${LOCAL_PROPERTIES//[[:space:]]/}" ]; then
+          PROPS="${SECRET_LOCAL_PROPERTIES:-${SECRET_NUVIO_LOCAL_PROPERTIES:-$SECRET_WEBOS_LOCAL_PROPERTIES}}"
+          if [ -z "${PROPS//[[:space:]]/}" ]; then
             echo "::error::LOCAL_PROPERTIES (or NUVIO_LOCAL_PROPERTIES) secret is required to build a release IPK with configured runtime environment."
             exit 1
           fi
-          printf '%s\n' "$LOCAL_PROPERTIES" > local.properties
+          printf '%s\n' "$PROPS" > local.properties
           chmod 600 local.properties
 
       - name: Gate 1 — Check source integrity
@@ -160,15 +163,16 @@ jobs:
           EOF
 
       - name: Create Draft GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Nuvio TV webOS 4 ${{ steps.tag.outputs.tag }} (Draft)
-          draft: true
-          prerelease: false
-          body_path: /tmp/release-notes.md
-          files: |
-            ${{ steps.artifact.outputs.target_ipk }}
-            ${{ steps.artifact.outputs.target_ipk }}.sha256
-            .cache/legacy-analysis/bundle-analysis.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          TARGET_IPK: ${{ steps.artifact.outputs.target_ipk }}
+        run: |
+          gh release create "$TAG" \
+            --title "Nuvio TV webOS 4 $TAG (Draft)" \
+            --notes-file /tmp/release-notes.md \
+            --draft \
+            "$TARGET_IPK" \
+            "${TARGET_IPK}.sha256" \
+            .cache/legacy-analysis/bundle-analysis.md \
             .cache/legacy-package-verification/verification.json
